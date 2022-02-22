@@ -1,0 +1,32 @@
+---
+title: "Normalisation"
+author: "Yuvarani Masarapu"
+date: "9/7/2021"
+output: html_document
+---
+
+```{r}
+library(SeuratObject)
+library(Seurat)
+library(sctransform)
+library(Matrix)
+library(RColorBrewer)
+library(Rcpp)
+```
+
+### Load filtered seurat object
+```{r}
+data.object.filter <- readRDS(file = "data.object.filter.human.only.rds")
+```
+
+### Normalisation and data integration
+```{r eval=FALSE}
+data.object.filter.norm <- lapply(data.object.filter, function(obj.filt){
+  obj.filt <- SCTransform(object = obj.filt, assay = "Spatial", verbose = FALSE, return.only.var.genes = F, vars.to.regress = c("nFeature_Spatial"), variable.features.n = 10000, seed.use = 5139)
+})
+```
+
+```{r}
+saveRDS(data.object.filter.norm, file = "data.object.filter.norm.rds")
+```
+

@@ -1,0 +1,99 @@
+---
+title: "covid lung clustering - only human data"
+author: "Yuvarani Masarapu"
+date: "9/13/2021"
+output: 
+  html_document:
+    code_folding: hide
+    toc: TRUE
+---
+
+```{r}
+library(SeuratObject)
+library(Seurat)
+library(harmony)
+library(sctransform)
+library(Matrix)
+library(RColorBrewer)
+```
+
+### Load filtered seurat object
+```{r}
+data.object.filter.norm <- readRDS(file = "data.object.filter.norm.rds")
+```
+
+### Data integration
+```{r eval=FALSE}
+integration.features <- SelectIntegrationFeatures(object.list = data.object.filter.norm, nfeatures = 10000)
+
+#modifying the maximum size of global variables
+options(future.globals.maxSize = 8000 * 1024^8)
+
+data.object.filter.norm <- PrepSCTIntegration(object.list = data.object.filter.norm, anchor.features = integration.features, verbose = FALSE)
+
+set.seed(4751)
+integration.anchors <- FindIntegrationAnchors(object.list = data.object.filter.norm, normalization.method = "SCT", anchor.features = integration.features, verbose = FALSE, reference = 1)
+
+data.object.filter.norm.integrated <- IntegrateData(anchorset = integration.anchors, normalization.method = "SCT", verbose = FALSE)
+
+VariableFeatures(data.object.filter.norm.integrated) <- integration.features
+
+data.object.filter.norm.integrated<- RunPCA(data.object.filter.norm.integrated, assay = "SCT", verbose = FALSE, features = integration.features, npcs = 50, reduction.name = "pca_before_harmony", seed.use = 58291)
+```
+
+### Dimensionality reduction and Clustering
+
+```{r eval=FALSE}
+DefaultAssay(data.object.filter.norm.integrated) <- "SCT"
+
+#modifying the maximum size of global variables
+options(future.globals.maxSize = 8000 * 1024^2)
+
+data.object.filter.norm.integrated <- RunUMAP(object = data.object.filter.norm.integrated, dims = 1:35, assay = "SCT", seed.use = 3471, reduction = "pca_before_harmony", reduction.name = "umap_before_harmony")
+
+set.seed(3185)
+data.object.filter.norm.integrated <- RunHarmony(object = data.object.filter.norm.integrated, group.by.vars = c("slide_id"), theta = c(2), assay.use = "SCT", reduction = "pca_before_harmony", dims.use = 1:35, plot_convergence = T, verbose = F, reduction.save = "harmony_sid", max.iter.harmony = 25)
+
+data.object.filter.norm.integrated <- RunUMAP(object = data.object.filter.norm.integrated, assay.use = "SCT", reduction = "harmony_sid", dims = 1:35, seed.use = 5147, reduction.name = "umap_after_harmony")
+
+set.seed(6785)
+data.object.filter.norm.integrated <- FindNeighbors(object = data.object.filter.norm.integrated, assay = "SCT", dims = 1:35, k.param = 23, graph.name = "graph_afterHarmony", reduction = "harmony_sid")
+
+data.object.filter.norm.integrated <- FindClusters(object = data.object.filter.norm.integrated, pc.use = 1:35, resolution = 0.4, save.SNN = T, do.sparse = T, graph.name = "graph_afterHarmony", random.seed = 39152, group.singletons = TRUE)
+```
+
+#### Visualize clusters
+```{r fig.height=5, fig.width=7}
+#custom colors
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+# UMAPs before, and after running Harmony
+DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_before_harmony", group.by = "section_id", cols = col_vector, pt.size = 1, label = T) + ggtitle("Before Harmony")
+
+DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_after_harmony", group.by = "section_id", cols = col_vector, pt.size = 1, label = T) + ggtitle("After Harmony")
+
+# Final clusters in UMAP plot
+names(col_vector) = (levels(data.object.filter.norm.integrated$seurat_clusters))
+
+DimPlot(object = data.object.filter.norm.integrated, group.by = "seurat_clusters", reduction = "umap_after_harmony", label = T, pt.size = 0.2, cols = col_vector[1:6]) + ggtitle("Seurat clusters distribution in UMAP")
+```
+
+
+### DE analysis
+```{r eval=FALSE}
+# DE genes per cluster
+markers.list <- lapply(levels(data.object.filter.norm.integrated$seurat_clusters), function(cl){
+  cl <- FindMarkers(object = data.object.filter.norm.integrated, assay = "SCT", ident.1 = cl, ident.2 = NULL, test.use = "wilcox", min.cells.group = 2, random.seed = 47)
+})
+
+# DE genes for covid samples vs negative controls
+covid.markers <- FindMarkers(object = data.object.filter.norm.integrated, assay = "SCT", ident.1 = c("covid"), ident.2 = c("control"), test.use = "wilcox", min.cells.group = 2, random.seed = 47, group.by = "sample_type")
+```
+
+```{r}
+saveRDS(data.object.filter.norm.integrated, file = "data.object.integrated.rds")
+```
+
+

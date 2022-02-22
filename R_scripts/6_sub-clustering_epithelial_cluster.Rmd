@@ -1,0 +1,96 @@
+---
+title: "sub-clustering - epithelial cluster"
+author: "Yuvarani Masarapu"
+date: "11/11/2021"
+output: html_document
+---
+
+```{r eval=FALSE}
+#We sub-clustered the epithelial cluster here to investigate the biological changes
+#occuring in the epithelial cell compartments.
+```
+
+## Loading package libraries
+```{r}
+library(SeuratObject)
+library(Seurat)
+library(ggplot2)
+```
+
+
+## Read data
+```{r}
+lung.integrated <- readRDS("~/data.object.integrated.rds")
+
+## Subset for Epithelial cluster
+epithelial <- subset(lung.integrated, idents = 3)
+```
+
+#### Sub-clustering
+```{r}
+set.seed(63)
+epithelial  <- FindNeighbors(object = epithelial, assay = "SCT", dims = 1:35, k.param = 23, graph.name = "graph_afterHarmony", reduction = "harmony_sid")
+
+epithelial <- FindClusters(object = epithelial, pc.use = 1:35, resolution = 0.2, save.SNN = T, do.sparse = T, graph.name = "graph_afterHarmony", random.seed = 3915, group.singletons = TRUE)
+```
+
+Custom colors
+```{r eval=FALSE}
+library(RColorBrewer)
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+```
+
+```{r fig.height=5, fig.width=7}
+names(col_vector) = (levels(epithelial$seurat_clusters))
+
+DimPlot(object = epithelial, group.by = "seurat_clusters", reduction = "umap_after_harmony", label = T, pt.size = 0.2, cols = col_vector[1:4]) + ggtitle("Seurat clusters distribution in UMAP")
+
+DimPlot(object = epithelial, reduction = "umap_after_harmony", split.by = "sample_type", cols = col_vector[1:2]) + ggtitle("Visualise two sample types side-by-side")
+```
+
+### DE analysis
+```{r eval=FALSE}
+markers.list <- lapply(levels(epithelial$seurat_clusters), function(cl){
+  cl <- FindMarkers(object = epithelial, assay = "SCT", ident.1 = cl, ident.2 = NULL, test.use = "wilcox", min.cells.group = 2, random.seed = 47)
+})
+
+for (list in 1:length(markers.list)){
+  markers.list[[list]] = cbind(gene = rownames(markers.list[[list]]), markers.list[[list]])
+}
+
+writexl::write_xlsx(markers.list, path = "epithelial_subcluster_markers.xlsx", col_names = TRUE, format_headers = TRUE)
+```
+
+```{r}
+saveRDS(epithelial, file = "epithelial_final_subclusters.rds")
+```
+
+```{r}
+p = SpatialPlot(epithelial, group.by = "seurat_clusters", cols = col_vector[1:2], images = "slice1", pt.size.factor = 1.2) + ggtitle("P1CL B1") + theme(
+  plot.title = element_text(face = "bold", size = 30, hjust = 0.5))
+ggsave(p, filename = "P1CLB1.pdf", dpi = 300)
+
+p = SpatialPlot(epithelial, group.by = "seurat_clusters", cols = col_vector[1:2], images = "slice1.9", pt.size.factor = 1.2) + ggtitle("P4nCL A1") + theme(
+  plot.title = element_text(face = "bold", size = 30, hjust = 0.5))
+ggsave(p, filename = "P4nCLA1.pdf", dpi = 300)
+```
+
+## DE genes for subclusters at spot-level comparison
+```{r}
+epithelial.covid = epithelial[,epithelial$viral_probes %in% "yes" & epithelial$sample_type %in% "covid"]
+
+covid.markers.list <- lapply(levels(epithelial.covid$seurat_clusters), function(cl){
+  cl <- FindMarkers(object = epithelial.covid, assay = "SCT", ident.1 = "covid_spot", ident.2 = "no_covid_spot", subset.ident = cl, group.by = "spot_label" ,test.use = "wilcox", random.seed = 47, min.pct = 0.005)
+})
+
+#save DEs from each cluster in a separate csv file
+for (list in 1:length(covid.markers.list)){
+  covid.markers.list[[list]] = cbind(gene = rownames(covid.markers.list[[list]]), covid.markers.list[[list]])
+}
+
+writexl::write_xlsx(covid.markers.list, path = "DEgenes_subclusters_epithelialCluster_spotlevel.xlsx", col_names = TRUE, format_headers = TRUE)
+```
+

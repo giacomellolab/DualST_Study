@@ -1,0 +1,87 @@
+---
+title: "QC analysis, filtering"
+author: "Yuvarani Masarapu"
+date: "7/29/2021"
+output: html_document
+---
+
+### Loading package libraries
+```{r}
+library(SeuratObject)
+library(Seurat)
+library(ggplot2)
+library(Matrix)
+```
+
+
+### Subset dataset to include only human geneset
+```{r eval=FALSE}
+data.object = readRDS(file = "data.object.human.sarscov2.rds")
+
+for(index in 1:length(data.object)){
+  data.object[[index]] = data.object[[index]][!(rownames(data.object[[index]]) %in% covid_genes_new$Covid_Gene), ]
+}
+```
+
+### Quality Control
+
+  * Filtering Hemoglobin genes
+
+```{r}
+hb.genes <- lapply(data.object, function(obj){
+  p = grep(pattern = "^HB[GEMAQ]", x = rownames(obj), value = T)
+  #delete the gene "HBEGF" which gets picked up but is not Hb gene
+  p = p[-c(1)]
+})
+
+for(index in 1:length(data.object)){
+  data.object[[index]] = data.object[[index]][!(rownames(data.object[[index]]) %in% hb.genes[[index]]), ]
+}
+```
+
+#### UMI and Features distribution across the tissue
+
+* Before filtering
+```{r}
+lapply(data.object, function(eachObj){
+  VlnPlot(eachObj, features = c("nFeature_Spatial", "nCount_Spatial"), ncol = 2, pt.size = 0.1)
+})
+```
+
+* Number of genes detected per UMI for each spot in the data
+```{r}
+for(index in 1:length(data.object)){
+  
+  data.object[[index]]$log10GenesPerUMI<-log10(data.object[[index]]$nFeature_Spatial) / log10(data.object[[index]]$nCount_Spatial) 
+}
+```
+
+### Filtering for low quality spots
+
+* Spot-level filtering
+  * nGene per spot >= 400
+  * nUMI per spot >= 500
+  * log10GenesPerUMI or genes/UMI ratio > 0.87
+
+* Gene-level filtering
+  * Keep gene if detected in atleast 1 spot
+
+```{r eval=FALSE}
+data.object.filter <- lapply(data.object, function(obj){
+  obj = obj[rowSums(obj) > 0, 
+            (obj$nCount_Spatial >= 500) & (obj$nFeature_Spatial >= 400) & (obj$log10GenesPerUMI > 0.87)]
+})
+```
+
+* After filtering
+```{r}
+lapply(data.object.filter, function(obj){
+   SpatialPlot(obj, features = c("nFeature_Spatial","nCount_Spatial"))
+})
+```
+
+```{r}
+saveRDS(data.object.filter, file = "data.object.filter.human.only.rds")
+```
+
+

@@ -1,0 +1,30 @@
+---
+title: "Colocalisation Analysis"
+author: "Yuvarani Masarapu"
+date: "10/21/2021"
+output: html_document
+---
+
+# Load package libraries
+```{r message=F, warning=F, verbose=F}
+library(Seurat)
+library(SeuratObject)
+```
+
+## load integrated data object
+```{r}
+lung.integrated <- readRDS("data.object.integrated.rds")
+```
+
+## Differential Expression Analysis (DEA)
+
+  * Covid+ vs Covid- spots in Covid sections only
+  
+```{r}
+lung.integrated = lung.integrated[, lung.integrated$sample_type %in% "covid" & lung.integrated$viral_probes %in% "yes"]
+
+markers.covid.signal = FindMarkers(object = lung.integrated, assay = "SCT", group.by = "spot_label", ident.1 = c("covid_spot"), ident.2 = c("no_covid_spot"), min.pct = 0.005, test.use = "wilcox", random.seed = 19)
+
+markers.covid.signal$gene = rownames(markers.covid.signal)
+markers.covid.signal.subset = markers.covid.signal[(markers.covid.signal$avg_log2FC > 1) | (markers.covid.signal$avg_log2FC < -1), ]
+```
