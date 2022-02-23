@@ -1,4 +1,4 @@
-Section IDs for counts data
+One-to-one mapping of folder ids from space ranger outputs to sample ids available in covidlung_metadata.xlsx file
 
 1112417 - P1CL B1
 1112418 - P1CL C1
