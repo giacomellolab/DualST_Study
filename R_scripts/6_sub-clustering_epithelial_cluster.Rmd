@@ -1,13 +1,12 @@
 ---
-title: "sub-clustering - epithelial cluster"
+title: "sub-clustering - epithelial cluster (cl id #3)"
 author: "Yuvarani Masarapu"
 date: "11/11/2021"
 output: html_document
 ---
 
 ```{r eval=FALSE}
-#We sub-clustered the epithelial cluster here to investigate the biological changes
-#occuring in the epithelial cell compartments.
+#We sub-clustered the epithelial cluster here to investigate the biological changes occuring in the epithelial cell compartments.
 ```
 
 ## Loading package libraries

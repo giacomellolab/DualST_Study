@@ -1,5 +1,5 @@
 ---
-title: "covid lung clustering - only human data"
+title: "covid lung clustering - only human data, and differential expression analysis"
 author: "Yuvarani Masarapu"
 date: "9/13/2021"
 output: 
@@ -32,7 +32,7 @@ options(future.globals.maxSize = 8000 * 1024^8)
 data.object.filter.norm <- PrepSCTIntegration(object.list = data.object.filter.norm, anchor.features = integration.features, verbose = FALSE)
 
 set.seed(4751)
-integration.anchors <- FindIntegrationAnchors(object.list = data.object.filter.norm, normalization.method = "SCT", anchor.features = integration.features, verbose = FALSE, reference = 1)
+integration.anchors <- FindIntegrationAnchors(object.list = data.object.filter.norm, normalization.method = "SCT", anchor.features = integration.features, verbose = FALSE, reference = 1) #reference with sample 1 to save computational time and complexity
 
 data.object.filter.norm.integrated <- IntegrateData(anchorset = integration.anchors, normalization.method = "SCT", verbose = FALSE)
 
@@ -49,7 +49,7 @@ DefaultAssay(data.object.filter.norm.integrated) <- "SCT"
 #modifying the maximum size of global variables
 options(future.globals.maxSize = 8000 * 1024^2)
 
-data.object.filter.norm.integrated <- RunUMAP(object = data.object.filter.norm.integrated, dims = 1:35, assay = "SCT", seed.use = 3471, reduction = "pca_before_harmony", reduction.name = "umap_before_harmony")
+data.object.filter.norm.integrated <- RunUMAP(object = data.object.filter.norm.integrated, dims = 1:35, assay = "SCT", seed.use = 3471, reduction = "pca_before_harmony", reduction.name = "umap_before_harmony") #35 contributing PCs chosen for further analysis
 
 set.seed(3185)
 data.object.filter.norm.integrated <- RunHarmony(object = data.object.filter.norm.integrated, group.by.vars = c("slide_id"), theta = c(2), assay.use = "SCT", reduction = "pca_before_harmony", dims.use = 1:35, plot_convergence = T, verbose = F, reduction.save = "harmony_sid", max.iter.harmony = 25)
@@ -75,7 +75,7 @@ DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_before_ha
 DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_after_harmony", group.by = "section_id", cols = col_vector, pt.size = 1, label = T) + ggtitle("After Harmony")
 
 # Final clusters in UMAP plot
-names(col_vector) = (levels(data.object.filter.norm.integrated$seurat_clusters))
+names(col_vector) <- (levels(data.object.filter.norm.integrated$seurat_clusters))
 
 DimPlot(object = data.object.filter.norm.integrated, group.by = "seurat_clusters", reduction = "umap_after_harmony", label = T, pt.size = 0.2, cols = col_vector[1:6]) + ggtitle("Seurat clusters distribution in UMAP")
 ```

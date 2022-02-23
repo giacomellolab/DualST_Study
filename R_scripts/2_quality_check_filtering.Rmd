@@ -1,5 +1,5 @@
 ---
-title: "QC analysis, filtering"
+title: "QC and filtering"
 author: "Yuvarani Masarapu"
 date: "7/29/2021"
 output: html_document
@@ -58,7 +58,7 @@ for(index in 1:length(data.object)){
 
 ### Filtering for low quality spots
 
-* Spot-level filtering
+* Spot-level filtering: keeping spots with, 
   * nGene per spot >= 400
   * nUMI per spot >= 500
   * log10GenesPerUMI or genes/UMI ratio > 0.87

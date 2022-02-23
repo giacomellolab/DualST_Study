@@ -1,5 +1,5 @@
 ---
-title: "Load counts, add metadata"
+title: "Load counts matrices and add metadata"
 author: "Yuvarani Masarapu"
 date: "7/28/2021"
 output: html_document
@@ -9,8 +9,8 @@ output: html_document
 knitr::opts_chunk$set(fig.width=16, fig.height=12, warning=FALSE, message=FALSE)
 ```
 
-# R markdown script to load counts into a seurat object, and
-# add metadata columns to the object.
+# R markdown script to load counts into a list of seurat objects, and
+# add metadata columns to each object.
 
 ### Loading package libraries
 ```{r}
@@ -20,10 +20,10 @@ library(readr)
 library(readxl)
 ```
 
-### Load processed data (from spaceranger) into seurat
+### Load processed data (outputs from spaceranger) into seurat
 ```{r warning=FALSE,eval=FALSE}
 #path to the directory where count matrices for each sample reside
-data_dir <- "covidlung_counts"
+data_dir <- "<path to the directory where count matrices for all samples reside>"
 
 data.list <- list.files(data_dir, recursive = F, full.names = T)
 
@@ -32,13 +32,14 @@ data.object <- lapply(data.list, function(folder){
   each.object <- Load10X_Spatial(data.dir = folder)
 })
 
-rm(data_dir, data.list, dir)
+rm(data_dir, data.list)
 ```
 
 ### Add metadata
 
 ```{r}
-lung_metadata <- read_excel("covidlung_metadata.xlsx")
+dir <- getwd()
+lung_metadata <- read_excel(paste(dir, "/data/covidlung_metadata.xlsx", sep = ""))
 ```
 
 ```{r}
@@ -76,10 +77,8 @@ rm(data)
 
 ### Subset the dataset for covid data only
 ```{r}
-covid_genes_new <- read_csv("covid_genes.csv")
-```
+covid_genes_new <- read_csv(paste(dir, "/data/covid_genes.csv", sep = ""))
 
-```{r}
 data.covid = list()
 for(index in 1:length(data.object)){
   data.covid[[index]] = data.object[[index]][(rownames(data.object[[index]]) %in% covid_genes_new$Covid_Gene), ]
@@ -88,7 +87,7 @@ for(index in 1:length(data.object)){
 rm(index)
 ```
 
-### Add spot-level labels to to mark active viral signal captured from ST
+### Add spot-level labels to to label active viral signal captured from ST
 
   * Add metadata column to the data with spot labels:
     * "covid_spot" where covid gene is captured and "no_covid_spot" for all other spots
@@ -98,7 +97,7 @@ for(index in 1:length(data.object)){
   #if it is a covid sample
   if(unique(data.object[[index]]$sample_type) %in% "covid"){
     
-    #check if the sample has viral probes added
+    #check if the sample had viral probes added
     if(unique(data.object[[index]]$viral_probes) %in% "yes")
     {
       barcodes = c(colnames(data.object[[index]]))
@@ -118,7 +117,7 @@ for(index in 1:length(data.object)){
       data.object[[index]] <- AddMetaData(object = data.object[[index]], metadata = barcodes, col.name = "spot_label")
     }
     
-    #if the covid sample does not have a viral probes
+    #if the covid sample did not have viral probes
     else{
       barcodes = c(colnames(data.object[[index]]))
       for(i in 1:length(barcodes)){
@@ -129,7 +128,7 @@ for(index in 1:length(data.object)){
     }
   }
   
-  #if the sample is a negavtive-control
+  #if the sample is a negative-control
   else{
     barcodes = c(colnames(data.object[[index]]))
     spots = colnames(data.covid[[index]])[data.covid[[index]]$nCount_Spatial > 0]
@@ -144,6 +143,7 @@ for(index in 1:length(data.object)){
 rm(index, barcodes, spots, i)
 ```
 
+### save the objects for quality check and further analysis
 ```{r}
 saveRDS(data.object, file = "data.object.human.sarscov2.rds")
 
