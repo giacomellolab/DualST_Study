@@ -3,8 +3,9 @@
 ## Dual spatially resolved transcriptomics for SARS-CoV-2 host-pathogen colocalization studies in humans
 Hailey Sounart, Enikő Lazar, Yuvarani Masarapu, Jian Wu, Tibor Várkonyi, Tibor Glasz, András Kiss, Erik Borgström, Zsuzsanna Varga, Olaf Bergmann, Stefania Giacomello
 
-The list of SARS-CoV-2 genes targeted by the probes in this study can be found in this [csv file](data/covid_genes.csv).
-The sample IDs for corresponding count matrices can be accessed from this [file](data/sampleID-counts-foldermapping.txt).
+## Data availability
+The list of SARS-CoV-2 genes targeted by the probes in this study and used in the data analysis can be found in this [csv file](data/covid_genes.csv).
+The sample IDs for corresponding count matrices can be accessed [here](data/sampleID-counts-foldermapping.txt).
 
 The counts can be accessed here.
 Corresponding sequences fastq files can be accessed upon request from here.
