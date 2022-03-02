@@ -1,6 +1,4 @@
-# DualSRT_Study
-
-## Dual spatially resolved transcriptomics for SARS-CoV-2 host-pathogen colocalization studies in humans
+# Dual spatially resolved transcriptomics for SARS-CoV-2 host-pathogen colocalization studies in humans
 Hailey Sounart, Enikő Lazar, Yuvarani Masarapu, Jian Wu, Tibor Várkonyi, Tibor Glasz, András Kiss, Erik Borgström, Zsuzsanna Varga, Olaf Bergmann, Stefania Giacomello
 
 ## Data availability
