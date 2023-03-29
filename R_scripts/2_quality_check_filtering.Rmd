@@ -42,11 +42,32 @@ for(index in 1:length(data.object)){
 #### UMI and Features distribution across the tissue
 
 * Before filtering
+
+Violin Plots
 ```{r}
 lapply(data.object, function(eachObj){
   VlnPlot(eachObj, features = c("nFeature_Spatial", "nCount_Spatial"), ncol = 2, pt.size = 0.1)
 })
 ```
+
+Spatial heatmaps to check spatial distribution on tissue sections
+
+nFeatures distribution
+
+```{r fig.show='hold', out.width="25%"}
+lapply(data.object, function(eachObj){
+  SpatialFeaturePlot(eachObj, features = c("nFeature_Spatial"))
+})
+```
+
+nCounts distribution
+
+```{r fig.show='hold', out.width="25%"}
+lapply(data.object, function(eachObj){
+  SpatialFeaturePlot(eachObj, features = c("nCount_Spatial"))
+})
+```
+
 
 * Number of genes detected per UMI for each spot in the data
 ```{r}
@@ -74,6 +95,15 @@ data.object.filter <- lapply(data.object, function(obj){
 ```
 
 * After filtering
+
+Violin Plots
+```{r}
+lapply(data.object.filter, function(obj){
+  VlnPlot(obj, features = c("nFeature_Spatial", "nCount_Spatial"), ncol = 2, pt.size = 0.1)
+})
+```
+
+Spatial heatmaps
 ```{r}
 lapply(data.object.filter, function(obj){
    SpatialPlot(obj, features = c("nFeature_Spatial","nCount_Spatial"))
