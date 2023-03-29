@@ -1,0 +1,609 @@
+---
+title: "Deconvolution results summary for SCP1052 study (covid lungs)"
+author: "Yuvarani Masarapu"
+output: 
+  html_document:
+    self_contained: true
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true    
+---
+
+Stereoscope was run for all ST sections, sc dataset SCP1052 was used.
+
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(progress=TRUE,verbose=TRUE)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, result='hold',fig.width=12, fig.height = 10)
+```
+
+
+```{r packages}
+suppressPackageStartupMessages(require(Matrix))
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(Seurat))
+suppressPackageStartupMessages(require(SeuratDisk))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(gridExtra))
+suppressPackageStartupMessages(require(pheatmap))
+suppressPackageStartupMessages(require(STutility))
+```
+
+```{r eval=FALSE}
+small.leg <- theme(legend.text = element_text(size=6), legend.key.width = unit(0.1,"cm"))
+cc = scale_color_gradientn(colors = c("grey", "yellow", "red", "black"))
+```
+
+To round off values of dataframe to particular digits
+```{r}
+round_df <- function(df, digits) {
+  nums <- vapply(df, is.numeric, FUN.VALUE = logical(1))
+
+  df[,nums] <- round(df[,nums], digits = digits)
+
+  (df)
+}
+```
+
+
+# Custom colors
+```{r eval=FALSE}
+library(RColorBrewer)
+n <- 60
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+lung.cl.colors = c(col_vector[1], col_vector[22], col_vector[3:6])
+lung.sample.colors = c(rep(col_vector[3], 2),
+                       rep(col_vector[2], 2),
+                       rep(col_vector[1], 4),
+                       rep(col_vector[5], 3),
+                       rep(col_vector[6], 2))
+
+lung.cl.colors_new <- lung.cl.colors
+lung.cl.colors_new[6] <- "pink"
+
+rm(n, qual_col_pals, col_vector, lung.sample.colors, lung.cl.colors)
+
+coldef_ST_H <- lung.cl.colors_new
+rm(lung.cl.colors_new)
+
+pie(rep(1, length(coldef_ST_H)), col = coldef_ST_H)
+
+coldef_multi_H = c("#e6194B", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#42d4f4",
+    "#f032e6", "#bfef45", "#fabed4", "#469990", "#dcbeff", "#9A6324", "#fffac8",
+    "#800000", "#aaffc3", "#808000", "#ffd8b1", "#000075", "#a9a9a9", "#000000")
+pie(rep(1, length(coldef_multi_H)), col = coldef_multi_H)
+```
+
+## Load ST data
+
+Fetch seurat object with the final clusters which was also used to run stereoscope.
+
+```{r load, eval=FALSE}
+indir = getwd()
+
+data.int <- readRDS(file = paste(indir, "/", "lung.integrated.updated_08_12_2021.rds", sep = ""))
+```
+
+
+```{r}
+p = DimPlot(data.int, group.by = "seurat_clusters", label = T, cols = coldef_ST_H, reduction = "umap_after_harmony") + NoAxes()
+print(p)
+```
+
+## Load Stereoscope results from SCP1052 study with different settings
+
+* SCP1052_5kepochs - SCP1052 study ran with 5k epochs
+* SCP1052_extra - SCP1052 study ran with 15k sc epochs and 25k st epochs
+
+```{r}
+types = c("SCP1052_5kepochs", "SCP1052_extra")
+tsv_names = c("W.2023-03-06000456.285512.tsv", "W.2023-03-07185420.597174.tsv")
+
+library(readr)
+input_dir = paste(indir, "/results", sep = "")
+samples = sort(unique(data.int$section_id))
+
+i = 1
+for (type in types){
+  
+  input_dir2 = file.path(input_dir, paste0(type))
+  print(sprintf("Reading from %s",input_dir2))
+  alldata = list()
+  for (sample in samples) {
+    dfile = file.path(input_dir2, sample, tsv_names[i])
+    tmp = read_tsv(file = dfile, col_names = TRUE)
+    tmp = data.frame(tmp, row.names = TRUE)
+    alldata[[sample]] = tmp
+  }
+
+  all = Reduce(rbind, alldata)
+  all = t(all)
+  all = as.data.frame(all)
+  all = all[, colnames(data.int)]
+
+  data.int[[type]] <- CreateAssayObject(counts = all)
+  i = i + 1
+}
+  
+celltypes = rownames(all)
+coldef_multi_H = coldef_multi_H[1:length(celltypes)]
+names(coldef_multi_H) = celltypes
+
+rm(tmp, p, all, alldata)
+```
+
+```{r save-results}
+#Save a seurat object with all the deconv data
+savefile = file.path(input_dir, "sobject_deconv_SCP1052_2023-03-21.Rds")
+saveRDS(data.int, file = savefile)
+```
+
+### Violin plots
+
+Plot predicted proportion of each SN-cluster onto each ST-cluster.
+
+```{r, fig.height=10, results='asis'}
+types <- types[c(1:2)]
+
+for (type in types){
+  cat("For",type, "\n")
+  p = VlnPlot(data.int, features = celltypes, assay = type, pt.size = 0, ncol=5, cols = coldef_ST_H)
+  ggsave(p, filename = paste(indir,"/results/celltypes-violins/violin_", type, "-proportions.pdf", sep = ""), dpi =300, height=16, width=16)
+  print(p)
+}
+```
+
+```{r, fig.height=10, results='asis', eval=FALSE}
+## Viral+ spots only
+
+data.int.copy <- data.int
+data.int <- data.int[ , data.int$pid %in% c("covid_P1CL B1","covid_P2CL C1","covid_P3CL A1","covid_P3CL B1")]
+data.int <- data.int[ , data.int$spot_label %in% "covid_spot"]
+
+types <- types[c(1:2)]
+
+for (type in types){
+  cat("For",type, "\n")
+  p = VlnPlot(data.int, features = "nCount_SCP1052_5kepochs", assay = type, pt.size = 0, ncol=5, group.by = "celltype_labels_extra")
+  print(p)
+}
+```
+
+### Per section
+
+Plot predicted proportion of each SN-cluster for each section. No threshold applied here for celltype proportion values.
+
+```{r}
+cell.prop.section = list()
+samples = sort(unique(data.int$section_id))
+
+for (type in types){
+  cell.prop = list()
+  for (s in samples) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$section_id == s])
+      cp = cp/sum(cp)
+      cell.prop[[s]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = samples
+  cell.prop.section[[type]] = cell.prop
+}
+```
+
+
+```{r, fig.height=8}
+
+for (type in types){
+  tot.prop = data.frame(cell.prop.section[[type]])
+  tot.prop$celltype = factor(rownames(tot.prop), levels = celltypes)
+
+  l = reshape2::melt(tot.prop, id.vars = "celltype")
+
+  p5 = ggplot(l, aes(x = variable, y = value, fill = celltype)) + geom_bar(position = "fill",
+    stat = "identity") + RotatedAxis() + scale_fill_manual(values = coldef_multi_H) + ggtitle(type)
+  
+  ggsave(p5, filename = paste(indir,"/results/deconvolution-barplots/per-section/barplot_persection", type, "-proportions_nothreshold.pdf", sep = ""), dpi =300, height=16, width=16)
+  
+  print(p5)
+}
+```
+
+Plot predicted proportion of each SN-cluster for each section. Threshold of 10% applied meaning that only celltypes with atleast 10% expression in the cluster are kept.
+
+```{r}
+cell.prop.section = list()
+samples = sort(unique(data.int$section_id))
+
+for (type in types){
+  cell.prop = list()
+  for (s in samples) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$section_id == s])
+      cp = cp/sum(cp)
+      cp[cp < 0.1] <- 0 #cell proportions below 10% get no value
+      cell.prop[[s]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = samples
+  cell.prop.section[[type]] = cell.prop
+}
+```
+
+
+```{r, fig.height=8}
+
+for (type in types){
+  tot.prop = data.frame(cell.prop.section[[type]])
+  tot.prop$celltype = factor(rownames(tot.prop), levels = celltypes)
+
+  l = reshape2::melt(tot.prop, id.vars = "celltype")
+
+  p5 = ggplot(l, aes(x = variable, y = value, fill = celltype)) + geom_bar(position = "fill",
+    stat = "identity") + RotatedAxis() + scale_fill_manual(values = coldef_multi_H) + ggtitle(type)
+  
+  ggsave(p5, filename = paste(indir,"/results/deconvolution-barplots/per-section/barplot_persection", type, "-proportions_with-threshold.pdf", sep = ""), dpi =300, height=16, width=16)
+  
+  print(p5)
+}
+```
+
+### Per cluster
+
+Plot predicted proportion of each SN-cluster for each ST-cluster without threshold meaning all celltypes are taken here.
+
+```{r}
+cell.prop.cl = list()
+clusters = levels(data.int$seurat_clusters)
+
+for (type in types){
+  cell.prop = list()
+  for (cl in clusters) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$seurat_clusters == cl])
+      cp = cp/sum(cp)
+      cell.prop[[cl]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = clusters
+  cell.prop.cl[[type]] = cell.prop
+}
+
+
+```
+
+#### Save celltype proportions for each ST cluster in a table
+```{r}
+#cell.prop.cl[[1]]
+#cell.prop.cl[[2]]
+
+#install.packages("xlsx")
+library("xlsx")
+
+write.xlsx(cell.prop.cl[[1]], 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onST.xlsx", sep = ""),
+           sheetName="SCP1052_5kepochs", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+
+write.xlsx(cell.prop.cl[[2]], 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onST.xlsx", sep = ""),
+           sheetName="SCP1052_extra", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+```
+
+without threshold, all proportions taken raw
+
+```{r, fig.height=8}
+for (type in types){
+  tot.prop = data.frame(cell.prop.cl[[type]])
+  tot.prop$celltype = factor(rownames(tot.prop), levels = celltypes)
+
+  l = reshape2::melt(tot.prop, id.vars = "celltype")
+
+  p5 = ggplot(l, aes(x = variable, y = value, fill = celltype)) + geom_bar(position = "fill",
+    stat = "identity") + RotatedAxis() + scale_fill_manual(values = coldef_multi_H) + ggtitle(type)
+  
+  ggsave(p5, filename = paste(indir,"/results/deconvolution-barplots/per-cluster/barplot_percluster", type, "-proportions_nothreshold.pdf", sep = ""), dpi =300, height=16, width=16)
+  
+  print(p5)
+}
+```
+
+Plot predicted proportion of each SN-cluster for each ST-cluster with threshold of 10%.
+
+```{r}
+cell.prop.cl = list()
+clusters = levels(data.int$seurat_clusters)
+
+for (type in types){
+  cell.prop = list()
+  for (cl in clusters) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$seurat_clusters == cl])
+      cp = cp/sum(cp)
+      cp[cp < 0.1] <- 0 #cell proportions below 10% get no value
+      cell.prop[[cl]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = clusters
+  cell.prop.cl[[type]] = cell.prop
+}
+
+
+```
+
+
+```{r, fig.height=8}
+
+for (type in types){
+  tot.prop = data.frame(cell.prop.cl[[type]])
+  tot.prop$celltype = factor(rownames(tot.prop), levels = celltypes)
+
+  l = reshape2::melt(tot.prop, id.vars = "celltype")
+
+  p5 = ggplot(l, aes(x = variable, y = value, fill = celltype)) + geom_bar(position = "fill",
+    stat = "identity") + RotatedAxis() + scale_fill_manual(values = coldef_multi_H) + ggtitle(type)
+  
+  ggsave(p5, filename = paste(indir,"/results/deconvolution-barplots/per-cluster/barplot_percluster", type, "-proportions_with-threshold.pdf", sep = ""), dpi =300, height=16, width=16)
+  
+  print(p5)
+}
+```
+
+Plot barplot for each celltype proportion across all ST clusters. Done for only the SCP1052_extra study. Saved as pdfs.
+
+```{r, fig.height=8}
+tot.prop = data.frame(cell.prop.cl[["SCP1052_extra"]])
+tot.prop$celltype = factor(rownames(tot.prop), levels = celltypes)
+  
+celltypes <- rownames(tot.prop)
+#round off proportion values to 3 decimal points
+tot.prop <- round_df(tot.prop, 3)
+
+for(ct in celltypes){
+  df <- tot.prop[ct, ]
+  df <- rbind(df, colnames(df))
+  df <- df[, -c(7)] #remove the last column with celltype names
+  df <- t(df) #transpose to arrange dataframe for plotting
+  df <- data.frame(df)
+  df$ST_clusters <- df$X2
+  df <- df[, -c(2)]
+  
+  df[ ,ct] <- as.numeric(df[ ,ct])
+  df$ST_clusters <- factor(df$ST_clusters, levels = unique(df$ST_clusters))
+  
+  p <- ggplot(df, aes(x = ST_clusters, y = df[,1], fill = ST_clusters)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = df[,1]), vjust=-0.5, color="black", size=8) +
+  scale_fill_manual(values = coldef_ST_H) +
+  labs(x="ST cluster", y="Expression", title = paste("Celltype proportions of ", ct, " in ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+  
+  ggsave(filename = paste(indir, "/results/celltype_proportions_SCP1052-extra/", ct, ".pdf", sep = ""), plot = p, dpi = 300, height = 10, width = 12)
+  
+  print(p)
+  
+}
+
+```
+
+### Celltypes per spot
+
+Proportion of the most abundant celltype per spot.
+
+```{r, fig.height=10}
+
+top.ct = sapply(types, function(x) apply(data.int@assays[[x]]@counts,2,max))
+
+par(mfrow = c(2,2))
+s = sapply(types, function(x) hist(top.ct[,x], 100, main = x))
+```
+
+
+Number of celltypes per spot (only counting celltypes with at least 5% abundance)
+
+```{r, fig.height=10}
+cutoff = 0.05
+n.ct = sapply(types, function(x) colSums(data.int@assays[[x]]@counts>cutoff))
+
+par(mfrow = c(2,2))
+s = sapply(types, function(x) hist(n.ct[,x], 20, main = x))
+
+
+```
+
+
+### Onto sections
+
+Plot the predicted celltype proportions onto ST sections
+
+```{r, fig.height=30, results='asis'}
+image_names = c("slice1",
+                "slice1.1",
+                "slice1.2",
+                "slice1.3",
+                "slice1.4",
+                "slice1.5",
+                "slice1.6",
+                "slice1.7",
+                "slice1.8",
+                "slice1.9",
+                "slice1.10",
+                "slice1.11",
+                "slice1.12")
+
+for (type in types){
+  cat("For",type, "\n")
+  data.int@active.assay = type
+  for (x in celltypes){
+    p = SpatialFeaturePlot(data.int, features = x, ncol = 4, images = image_names, crop = F, image.alpha = 0.5, stroke = 0, pt.size.factor = 1)
+  print(p)
+  }
+}
+```
+
+Or to PDF for each celltype for higher resolution
+
+```{r}
+for (type in types){
+  plotfile = file.path(input_dir,type,sprintf("celltype_sections_%s.pdf",type))
+  data.int@active.assay = type
+  pdf(plotfile, height = 16, width = 16)
+  for (celltype in celltypes){
+    p = SpatialFeaturePlot(data.int, features = celltype, ncol = 4, images = image_names, crop = F, image.alpha = 0.5, stroke = 0, pt.size.factor = 1)
+    print(p)
+  }
+  dev.off()
+}
+```
+
+### Onto umap
+
+```{r, fig.height=12}
+for (type in types){
+  cat("For",type, "\n")
+  data.int@active.assay = type
+  p = lapply(celltypes, function(x) FeaturePlot(data.int, features = x, combine = T, reduction = "umap_after_harmony") + cc + small.leg + NoAxes())
+  grid.arrange(grobs = p, ncol=4, top = type)
+}
+```
+
+### Compare settings
+
+For each celltype, plot distribution of each celltype. Value is the expression value calculated by stereoscope.
+
+```{r, fig.height=4}
+
+all = lapply(types, function(x) {
+  d = data.frame(t(data.int@assays[[x]]@counts))
+  d$type = x
+  d$sample = data.int$section_id
+  d$cluster = data.int$seurat_clusters
+  m = reshape2::melt(d)
+  return(m)
+})
+
+stats = Reduce(rbind,all)
+
+for (ct in celltypes){
+  s = stats[stats$variable == ct,]
+  p = ggplot(s, aes(x=cluster,y=value, fill=type)) + geom_boxplot(outlier.size = .1) + RotatedAxis() + ggtitle(sprintf("SN cluster %s",ct))
+  print(p)
+}
+
+
+```
+
+## Celltype labels to each spot
+
+For each spot, we assign it the celltype with the maximum proportion value in that spot.
+
+We do that for both the stereoscope settings.
+
+```{r}
+cell.type.prop <- data.frame(data.int@assays[["SCP1052_5kepochs"]]@counts)
+max_label_5kepochs <- rownames(cell.type.prop)
+
+celltype_label_5kepochs <- c()
+for(celltype in 1:length(colnames(cell.type.prop))){
+  #print(celltype)
+  value <- which.max(cell.type.prop[,celltype])
+  #print(value)
+  celltype_label_5kepochs[celltype] <- max_label_5kepochs[value]
+  #print(celltype_label_5kepochs[celltype])
+}
+
+data.int$celltype_labels_5kepochs <- celltype_label_5kepochs
+```
+
+```{r}
+cell.type.prop <- data.frame(data.int@assays[["SCP1052_extra"]]@counts)
+max_label_extra <- rownames(cell.type.prop)
+
+celltype_label_extra <- c()
+for(celltype in 1:length(colnames(cell.type.prop))){
+  #print(celltype)
+  value <- which.max(cell.type.prop[,celltype])
+  #print(value)
+  celltype_label_extra[celltype] <- max_label_extra[value]
+  #print(celltype_label_extra[celltype])
+}
+
+data.int$celltype_labels_extra <- celltype_label_extra
+
+rm(max_label_extra, max_label_5kepochs, cell.type.prop, value, celltype)
+```
+
+### Save the object with celltype labels
+```{r}
+saveRDS(data.int, file = paste(indir, "/results/sobject_deconv_SCP1052_2023-03-24.Rds", sep = ""))
+```
+
+## Celltype proportions across the viral+ and viral- spots
+
+Check how the celltype proportions look between the viral+ and viral- spots.
+
+```{r}
+cell.prop.lbl = list()
+labels = sort(unique(data.int$covid_signal))
+
+for (type in types){
+  cell.prop = list()
+  for (cl in labels) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$covid_signal == cl])
+      cp = cp/sum(cp)
+      cell.prop[[cl]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = labels
+  cell.prop.lbl[[type]] = cell.prop
+}
+```
+
+```{r}
+cell.prop.lbl[[1]]
+cell.prop.lbl[[2]]
+
+library("xlsx")
+
+write.xlsx(cell.prop.lbl[[1]], 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onViralSpots.xlsx", sep = ""),
+           sheetName="SCP1052_5kepochs", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+
+write.xlsx(cell.prop.lbl[[2]], 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onViralSpots.xlsx", sep = ""),
+           sheetName="SCP1052_extra", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+```
+
+### Total spots across viral+ and viral-
+```{r}
+tbl1 <- table("celltypes" = data.int$celltype_labels_5kepochs, data.int@meta.data$covid_signal)
+write.xlsx(tbl1, 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onViralSpots.xlsx", sep = ""),
+           sheetName="spots-freq_SCP1052-5kepochs", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+
+tbl2 <- table("celltypes" = data.int$celltype_labels_extra, data.int@meta.data$covid_signal)
+write.xlsx(tbl2, 
+           file = paste(indir, "/results/celltype_proportions-SCP1052_onViralSpots.xlsx", sep = ""),
+           sheetName="spots-freq_SCP1052-extra", 
+           col.names=TRUE, row.names=TRUE, append=TRUE)
+```
+
+

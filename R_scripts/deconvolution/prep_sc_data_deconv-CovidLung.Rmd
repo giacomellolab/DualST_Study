@@ -1,0 +1,147 @@
+---
+title: "Prep SC data for deconv (Covid Lung)"
+author: "Yuvarani Masarapu"
+date: "16/02/2023"
+output: 
+  html_document:
+    self_contained: true
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true    
+---
+
+Load the R objects from sc datasets and inspect them.
+
+Subsample SC data to X cells per celltype.
+
+Run DEG detection and filter markers to have a good set of deconvolution genes.
+
+We also need to subset SC data for the donors with disease to treatment time same as our study.
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(progress=TRUE,verbose=TRUE)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, result='hold',fig.width=10, fig.height = 8)
+```
+
+
+```{r packages}
+suppressPackageStartupMessages(require(Matrix))
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(Seurat))
+suppressPackageStartupMessages(require(gridExtra))
+suppressPackageStartupMessages(require(pheatmap))
+suppressPackageStartupMessages(require(Signac))
+suppressPackageStartupMessages(require(remotes))
+suppressPackageStartupMessages(require(SeuratDisk))
+
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+#BiocManager::install("Rsamtools")
+#setRepositories(ind=1:3)
+#install.packages("Signac")
+
+#if (!requireNamespace("remotes", quietly = TRUE)) {
+#  install.packages("remotes")
+#}
+#remotes::install_github("mojaveazure/seurat-disk")
+```
+
+# Covid Lung data
+
+# Read .h5ad file from SCP1052 study
+
+```{r}
+library(anndata)
+temp <- read_h5ad("/Users/yuvarani.masarapu/Documents/sc_covid_lung/SCP1052/other/lung.h5ad")
+```
+
+## Subsample for selected donors: D1, D4, D5, D6, D8, D12, D18, D14, D16
+
+```{r}
+subset_sc <- temp[temp$obs$donor %in% c('D1','D4','D5','D6', 'D8', 'D12', 'D18', 'D14', 'D16')]
+```
+
+```{r}
+subset_sc$write_h5ad(filename = paste(indir, "/stereoscope-covidlung-input/SCP1052/subsampled_scp1052.h5ad" , sep = "") )
+```
+
+
+# Read .h5ad file from SCP1219 study
+
+```{r}
+library(Matrix)
+library(anndata)
+matrix_dir = "/Users/yuvarani.masarapu/Documents/sc_covid_lung/SCP1219/expression/601c418b771a5b0d6f2a654c/"
+barcode.path <- paste0(matrix_dir, "lung_cellNames.csv")
+features.path <- paste0(matrix_dir, "lung_geneNames_upload.csv")
+matrix.path <- paste0(matrix_dir, "gene_sorted-lung_expression_data.mtx.gz")
+mat <- readMM(file = matrix.path)
+feature.names = read.delim(features.path,
+                           header = FALSE,
+                           stringsAsFactors = FALSE)
+barcode.names = read.delim(barcode.path,
+                           header = FALSE,
+                           stringsAsFactors = FALSE)
+colnames(mat) = barcode.names$V1
+rownames(mat) = feature.names$V1
+```
+
+## Load Metadata file
+```{r}
+df = read.table('/Users/yuvarani.masarapu/Documents/sc_covid_lung/SCP1219/metadata/lung_metaData.txt',sep='\t')
+
+colnames(df) <- df[1,]
+
+df = df[-c(1,2),]
+```
+
+## Subset the metadata file to include only the barcodes for selected donors
+
+Covid: L03cov, L05cov, L06cov, L09cov, L11cov, L12cov, L13cov, L15cov, L17cov
+
+Controls: C51ctr, C52ctr, C53ctr, C54ctr, C55ctr, C56ctr, C57ctr
+```{r}
+selected.donors = c("L03cov", "L05cov", "L06cov","L09cov", "L11cov", "L12cov", "L13cov", "L15cov", "L17cov", "C51ctr", "C52ctr", "C53ctr", "C54ctr", "C55ctr","C56ctr", "C57ctr")
+df = df[df$donor_id %in% selected.donors, ]
+
+df$bio_celltype_main <- df$cell_type_main 
+```
+
+## Subsample the matrix to include only the barcodes for selected donors
+
+```{r}
+selected.barcodes <- df$NAME
+mat <- mat[ ,colnames(mat) %in% selected.barcodes]
+
+mat <- t(mat) #need to do transpose so the rows are barcodes and the columns are genes
+rownames(mat) <- selected.barcodes
+
+rownames(df) <- selected.barcodes
+
+write.table(df, file='/Users/yuvarani.masarapu/Documents/sc_covid_lung/stereoscope_deconvolution_covid/stereoscope-covidlung-input/SCP1219/metadata_sc-scp1219.tsv', quote = FALSE ,col.names = TRUE, row.names = FALSE, sep = "\t")
+```
+
+## Now save the matrix as .tsv file and also save the subsetted metadata file as .tsv
+
+```{r}
+write.table(mat, file='/Users/yuvarani.masarapu/Documents/sc_covid_lung/stereoscope_deconvolution_covid/stereoscope-covidlung-input/SCP1219/subsampled_scp1219.tsv', quote=FALSE, sep='\t', col.names = TRUE, row.names = TRUE)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
+
+```{r}
+df <- readr::read_tsv("/Users/yuvarani.masarapu/Documents/sc_covid_lung/stereoscope_deconvolution_covid/stereoscope-covidlung-input/SCP1219/subsampled_scp1219.tsv")
+
+df_met <- readr::read_tsv("/Users/yuvarani.masarapu/Documents/sc_covid_lung/stereoscope_deconvolution_covid/stereoscope-covidlung-input/SCP1219/metadata_sc-scp1219.tsv")
+```
+
