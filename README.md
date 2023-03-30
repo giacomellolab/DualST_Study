@@ -21,5 +21,10 @@ Deconvolution was performed using Stereoscope. The input single cell data for th
 
 This dataset was subsampled to include donor ids: D1, D4, D5, D6, D8, D12, D18, D14, D16. These donor ids were selected based on the timeframe of symptom onset to death withon 13-20 days which is close to the duration of 13-17 days from diagnosis to death in our study.
 
+Two Stereoscope runs were performed, one setting was tested for each run. These are stated below.
+
+Setting 1: 5000 sc epochs and 10000 st epochs
+Setting 2: 15000 sc epochs and 25000 st epochs
+
 The single cell data subsampling and preparation of the ST dataset for deconvolution was performed using scripts [prep_sc_data_deconv-CovidLung.Rmd](R_scripts/deconvolution/prep_sc_data_deconv-CovidLung.Rmd) and [prep_st_data_for_deconv-CovidLung.Rmd](R_scripts/deconvolution/prep_st_data_for_deconv-CovidLung.Rmd) respectively.
 The results of the deconvolution were summarised in the script [summary_stereoscope_covid-lung.Rmd](R_scripts/deconvolution/summary_stereoscope_covid-lung.Rmd).
