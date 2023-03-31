@@ -1,0 +1,421 @@
+---
+title: "Colcalisation DE (using deconv results) for covid lung project"
+author: "Yuvarani Masarapu"
+date: "2023-03-24"
+output: html_document
+---
+
+```{r packages}
+suppressPackageStartupMessages(require(Matrix))
+suppressPackageStartupMessages(require(dplyr))
+suppressPackageStartupMessages(require(Seurat))
+suppressPackageStartupMessages(require(SeuratDisk))
+suppressPackageStartupMessages(require(ggplot2))
+suppressPackageStartupMessages(require(gridExtra))
+suppressPackageStartupMessages(require(pheatmap))
+suppressPackageStartupMessages(require(STutility))
+suppressPackageStartupMessages(require(sctransform))
+```
+
+# Load deconvolution object with celltype labels
+
+```{r save-results}
+indir <- getwd()
+data.int <- readRDS(file = paste(indir, "/results/sobject_deconv_SCP1052_2023-03-24.Rds", sep = ""))
+```
+
+
+Top 5 expressing celltypes across the viral+ spots are *B.Plasma*, *Endothelial*, *Myeloid*, *RBC*, and *T.NK*
+
+Hence we perform colocalization analysis for spots expressing these celltypes. We consider the celltype labels to group the spots under each category.
+
+## DE analysis for these celltypes, saved in an excel document with multiple sheets
+```{r}
+data.int <- data.int[ , data.int$pid %in% c("covid_P1CL B1","covid_P2CL C1","covid_P3CL A1","covid_P3CL B1")]
+DefaultAssay(data.int) <- "SCT"
+```
+
+Split the seurat object into each celltype object to prep for DE
+```{r}
+labels <- c("B.Plasma", "Endothelial", "Myeloid", "RBC", "T.NK")
+
+celltype.obj <- list()
+for(celltype in 1:length(labels)){
+  print(labels[celltype])
+  celltype.obj[[celltype]] <- data.int[, data.int$celltype_labels_extra %in% labels[celltype]]
+}
+```
+
+### Perform DE between viral+ and viral-
+```{r}
+for(cl in 1:length(celltype.obj)){
+  covid.pos.biomarkers <- FindMarkers(object = celltype.obj[[cl]], 
+                                      assay = "SCT", 
+                                      ident.1 = c("covid_spot"), 
+                                      ident.2 = c("no_covid_spot"), 
+                                      test.use = "wilcox", 
+                                      min.cells.group = 2, 
+                                      random.seed = 59, 
+                                      group.by = "spot_label",
+                                      recorrect_umi = FALSE)
+  covid.pos.biomarkers <- cbind(gene = rownames(covid.pos.biomarkers), covid.pos.biomarkers)
+  covid.pos.biomarkers <- covid.pos.biomarkers[covid.pos.biomarkers$p_val_adj < 0.005, ]
+  covid.pos.biomarkers <- covid.pos.biomarkers[order(covid.pos.biomarkers$avg_log2FC, decreasing = TRUE), ]
+  
+  xlsx::write.xlsx(covid.pos.biomarkers, 
+                   file = paste(indir, "/results/DE_viral-pos-vs-neg_top5-celltypes.xlsx", sep = ""), 
+                   sheetName = paste(labels[cl],sep = ""),
+                   col.names = TRUE, 
+                   row.names = TRUE,
+                   append = TRUE)
+  
+}
+```
+
+### Find unique DE genes per celltype
+```{r}
+#cl.index <- names(cell)
+covid.pos.biomarkers <- list()
+for(cl in 1:length(celltype.obj)){
+  covid.pos.biomarkers[[cl]] <- FindMarkers(object = celltype.obj[[cl]], 
+                                      assay = "SCT", 
+                                      ident.1 = c("covid_spot"), 
+                                      ident.2 = c("no_covid_spot"), 
+                                      test.use = "wilcox", 
+                                      min.cells.group = 2, 
+                                      random.seed = 59, 
+                                      group.by = "spot_label",
+                                      recorrect_umi = FALSE)
+  covid.pos.biomarkers[[cl]] <- cbind(gene = rownames(covid.pos.biomarkers[[cl]]), covid.pos.biomarkers[[cl]])
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][covid.pos.biomarkers[[cl]]$p_val_adj < 0.005, ]
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][order(covid.pos.biomarkers[[cl]]$avg_log2FC, decreasing = TRUE), ]
+  
+}
+
+#names(covid.pos.biomarkers) <- names(cl.obj)
+```
+
+```{r}
+#First find unique genes from each dataframe
+all.genes <- data.table::rbindlist(covid.pos.biomarkers, fill = FALSE, idcol = "celltype") #row bind all dataframes in the list object and create a column called "cluster" which shows which cluster the gene is DE for
+
+# Genes that only appear 1 time are actually unique across clusters
+# we identify those genes and map them back to the DE genes list files
+genes.count <- data.frame(table(all.genes$gene))
+genes.count <- genes.count[genes.count$Freq == 1, ]
+
+cl.index <- labels
+covid.pos.markers.uniq <- covid.pos.biomarkers
+for(i in 1:length(covid.pos.markers.uniq)){
+  covid.pos.markers.uniq[[i]] = covid.pos.markers.uniq[[i]][covid.pos.markers.uniq[[i]]$gene %in% genes.count$Var1, ]
+  xlsx::write.xlsx(covid.pos.markers.uniq[[i]], 
+                   file = paste(indir, "/results/DE_viral-pos-vs-neg_top5-celltypes_Unique.xlsx", sep = ""), 
+                   sheetName = paste(cl.index[i],sep = ""),
+                   col.names = TRUE, 
+                   row.names = TRUE,
+                   append = TRUE)
+}
+```
+
+## Colocalization analysis for viral+ vs viral- spots for each cluster
+
+* We do DE analysis for the covid affected samples which had viral probes added to capture viral genes.
+* We have covid_1C B1, covid_2C C1, covid_3C A1, covid_3C B1
+
+```{r}
+#data.int <- readRDS(file = paste(indir, "/results/sobject_deconv_SCP1052_2023-03-24.Rds", sep = ""))
+data.int <- data.int[ , data.int$pid %in% c("covid_P1CL B1","covid_P2CL C1","covid_P3CL A1","covid_P3CL B1")]
+DefaultAssay(data.int) <- "SCT"
+
+cl.obj <- SplitObject(data.int, split.by = "ident") #split the seurat object into each cluster object before running DE
+```
+
+```{r}
+#remotes::install_github("ChristophH/sctransform@develop")
+library(sctransform)
+library(Seurat)
+library(SeuratObject)
+
+cl.index <- names(cl.obj)
+covid.pos.biomarkers <- list()
+for(cl in 1:length(cl.obj)){
+  covid.pos.biomarkers[[cl]] <- FindMarkers(object = cl.obj[[cl]], 
+                                      assay = "SCT", 
+                                      ident.1 = c("covid_spot"), 
+                                      ident.2 = c("no_covid_spot"), 
+                                      test.use = "wilcox", 
+                                      min.cells.group = 2, 
+                                      random.seed = 59, 
+                                      group.by = "spot_label",
+                                      recorrect_umi = FALSE)
+  covid.pos.biomarkers[[cl]] <- cbind(gene = rownames(covid.pos.biomarkers[[cl]]), covid.pos.biomarkers[[cl]])
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][covid.pos.biomarkers[[cl]]$p_val_adj < 0.005, ]
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][order(covid.pos.biomarkers[[cl]]$avg_log2FC, decreasing = TRUE), ]
+  
+  xlsx::write.xlsx(covid.pos.biomarkers, 
+                   file = paste(indir, "/results/DE_viral-pos-vs-neg_bySTClusters.xlsx", sep = ""), 
+                   sheetName = paste("cluster",cl.index[cl],sep = ""),
+                   col.names = TRUE, 
+                   row.names = TRUE,
+                   append = TRUE)
+  
+}
+
+names(covid.pos.biomarkers) <- names(cl.obj)
+saveRDS(cl.obj, file = paste(indir, "/results/cl_object_split_deconv_2023-03-24.rds", sep = ""))
+```
+
+### Find unique DE genes for each cluster
+
+```{r}
+cl.index <- names(cl.obj)
+covid.pos.biomarkers <- list()
+for(cl in 1:length(cl.obj)){
+  covid.pos.biomarkers[[cl]] <- FindMarkers(object = cl.obj[[cl]], 
+                                      assay = "SCT", 
+                                      ident.1 = c("covid_spot"), 
+                                      ident.2 = c("no_covid_spot"), 
+                                      test.use = "wilcox", 
+                                      min.cells.group = 2, 
+                                      random.seed = 59, 
+                                      group.by = "spot_label",
+                                      recorrect_umi = FALSE)
+  covid.pos.biomarkers[[cl]] <- cbind(gene = rownames(covid.pos.biomarkers[[cl]]), covid.pos.biomarkers[[cl]])
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][covid.pos.biomarkers[[cl]]$p_val_adj < 0.005, ]
+  covid.pos.biomarkers[[cl]] <- covid.pos.biomarkers[[cl]][order(covid.pos.biomarkers[[cl]]$avg_log2FC, decreasing = TRUE), ]
+}
+
+names(covid.pos.biomarkers) <- names(cl.obj)
+```
+
+```{r}
+#First find unique genes from each dataframe
+all.genes <- data.table::rbindlist(covid.pos.biomarkers, fill = FALSE, idcol = "cluster") #row bind all dataframes in the list object and create a column called "cluster" which shows which cluster the gene is DE for
+
+# Genes that only appear 1 time are actually unique across clusters
+# we identify those genes and map them back to the DE genes list files
+genes.count <- data.frame(table(all.genes$gene))
+genes.count <- genes.count[genes.count$Freq == 1, ]
+
+cl.index <- names(covid.pos.markers.uniq)
+covid.pos.markers.uniq <- covid.pos.biomarkers
+for(i in 1:length(covid.pos.markers.uniq)){
+  covid.pos.markers.uniq[[i]] = covid.pos.markers.uniq[[i]][covid.pos.markers.uniq[[i]]$gene %in% genes.count$Var1, ]
+  xlsx::write.xlsx(covid.pos.markers.uniq[[i]], 
+                   file = paste(indir, "/results/DE_viral-pos-vs-neg_bySTClusters_Unique.xlsx", sep = ""), 
+                   sheetName = paste("cluster",cl.index[i],sep = ""),
+                   col.names = TRUE, 
+                   row.names = TRUE,
+                   append = TRUE)
+}
+```
+
+## Barplot to show viral+ spots distribution
+
+### across all 12 celltypes
+
+* Each spot is already labelled according to it highest expressing celltype
+
+```{r}
+data.int <- data.int[ , data.int$pid %in% c("covid_P1CL B1","covid_P2CL C1","covid_P3CL A1","covid_P3CL B1")]
+```
+
+```{r}
+cell.prop.lbl = list()
+labels = sort(unique(data.int$covid_signal))
+
+for (type in types){
+  cell.prop = list()
+  for (cl in labels) {
+      cp = rowSums(data.int@assays[[type]]@counts[,data.int$covid_signal == cl])
+      cp = cp/sum(cp)
+      cell.prop[[cl]] = cp
+  }
+  cell.prop = Reduce(cbind, cell.prop)
+  colnames(cell.prop) = labels
+  cell.prop <- cbind(cell.prop, celltypes)
+  cell.prop.lbl[[type]] = cell.prop
+}
+```
+
+#### Barplots with celltype proportions across the viral+ and viral- spots
+```{r}
+cell.prop.lbl[[1]]
+cell.prop.lbl[[2]]
+
+cell.prop.lbl[[1]] <- data.frame(cell.prop.lbl[[1]])
+cell.prop.lbl[[2]] <- data.frame(cell.prop.lbl[[2]])
+cell.prop.lbl[[1]]$covid.no.signal <- as.numeric(cell.prop.lbl[[1]]$covid.no.signal)
+cell.prop.lbl[[1]]$covid.signal <- as.numeric(cell.prop.lbl[[1]]$covid.signal)
+cell.prop.lbl[[2]]$covid.no.signal <- as.numeric(cell.prop.lbl[[2]]$covid.no.signal)
+cell.prop.lbl[[2]]$covid.signal <- as.numeric(cell.prop.lbl[[2]]$covid.signal)
+
+cell.prop.lbl[[1]] <- round_df(cell.prop.lbl[[1]], 3)
+cell.prop.lbl[[2]] <- round_df(cell.prop.lbl[[2]], 3)
+
+library(ggplot2)
+library(reshape2)
+
+df2 <- melt(cell.prop.lbl[[1]], id.vars='celltypes')
+head(df2)
+
+p <- ggplot(df2, aes(x = celltypes, y = value, fill = variable)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = value), vjust=1, color="black", size=6) +
+  labs(x="Celltype", y="Celltype proportion value", title = paste("Celltype proportions across viral+ and viral- spots (covid sections with viral probes only)", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/results/celltype_proportions_viral+_viral-_spots_SCP1052-5kepochs.pdf", sep = ""), dpi = 300, height = 16, width = 16)
+
+library(ggplot2)
+library(reshape2)
+
+df2 <- melt(cell.prop.lbl[[2]], id.vars='celltypes')
+head(df2)
+
+p <- ggplot(df2, aes(x = celltypes, y = value, fill = variable)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = value), vjust=1, color="black", size=6) +
+  labs(x="Celltype", y="Celltype proportion value", title = paste("Celltype proportions across viral+ and viral- spots (covid sections with viral probes only)", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/results/celltype_proportions_viral+_viral-_spots_SCP1052-extra.pdf", sep = ""), dpi = 300, height = 16, width = 16)
+```
+
+#### Barplot with viral+ and viral- spots counts across the celltypes
+```{r}
+tbl1 <- table("celltypes" = data.int$celltype_labels_5kepochs, data.int@meta.data$covid_signal)
+tbl2 <- table("celltypes" = data.int$celltype_labels_extra, data.int@meta.data$covid_signal)
+
+tbl1 <- data.frame(tbl1)
+tbl2 <- data.frame(tbl2)
+
+tbl1
+tbl2
+
+p <- ggplot(tbl1, aes(x = celltypes, y = Freq, fill = Var2)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="Celltype", y="Total spots", title = paste("Distribution of viral+ and viral- spots (covid sections with viral probes only) across celtypes", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/results/viral_distribution_celltypes_SCP1052-5kepochs.pdf", sep = ""), dpi = 300, height = 16, width = 16)
+
+p <- ggplot(tbl2, aes(x = celltypes, y = Freq, fill = Var2)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="Celltype", y="Total spots", title = paste("Distribution of viral+ and viral- spots (covid sections with viral probes only) across celtypes", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/results/viral_distribution_celltypes_SCP1052-extra.pdf", sep = ""), dpi = 300, height = 16, width = 16)
+```
+
+### across ST clusters
+
+```{r}
+data.int <- data.int[ , data.int$pid %in% c("covid_P1CL B1","covid_P2CL C1","covid_P3CL A1","covid_P3CL B1")]
+```
+
+
+#### Barplot with viral+ and viral- spots counts across the ST clusters
+```{r}
+tbl1 <- table("STcluster" = data.int@active.ident, data.int@meta.data$covid_signal)
+tbl2 <- table("STcluster" = data.int@active.ident, data.int@meta.data$covid_signal)
+
+tbl1 <- data.frame(tbl1)
+tbl2 <- data.frame(tbl2)
+
+tbl1
+tbl2
+
+p <- ggplot(tbl2, aes(x = STcluster, y = Freq, fill = Var2)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="ST cluster", y="Total spots", title = paste("viral+ and viral- spots (covid sections with viral probes only) across ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/results/viral_signal_acrossClusters_SCP1052-extra.pdf", sep = ""), dpi = 300, height = 16, width = 16)
+```
+
+## Violin plots
+
+```{r}
+p <- VlnPlot(object = data.int, features = "nCount_SCT", split.by = "spot_label", pt.size = 0) + ggtitle("nCount distribution for viral+ and viral- spots across ST clusters")
+ggsave(p, filename = paste(indir,"/results/violin_viralspots_nCount_percluster.pdf", sep = ""), dpi = 300, height = 12, width = 14)
+
+p<- VlnPlot(object = data.int, features = "nFeature_SCT", split.by = "spot_label", pt.size = 0) + ggtitle("nFeature distribution for viral+ and viral- spots across ST clusters")
+ggsave(p, filename = paste(indir,"/results/violin_viralspots_nFeatures_percluster.pdf", sep = ""), dpi = 300, height = 12, width = 14)
+```
+
+```{r}
+p <- VlnPlot(object = data.int, features = "nCount_SCT", split.by = "spot_label", pt.size = 0, group.by = "celltype_labels_extra") + ggtitle("nCount distribution for viral+ and viral- spots across celltypes")
+ggsave(p, filename = paste(indir,"/results/violin_viralspots_nCount_perCelltype.pdf", sep = ""), dpi = 300, height = 10, width = 24)
+
+p<- VlnPlot(object = data.int, features = "nFeature_SCT", split.by = "spot_label", pt.size = 0, group.by = "celltype_labels_extra") + ggtitle("nFeature distribution for viral+ and viral- spots across celltypes")
+ggsave(p, filename = paste(indir,"/results/violin_viralspots_nFeatures_perCelltype.pdf", sep = ""), dpi = 300, height = 10, width = 24)
+```
+
+Check for viral entry genes in the DE lists
+```{r}
+viral_entry <- c("ACE2", "TMPRSS2", "PCK5", "PCSK", "CTSL", "CTSB", "NRP1")
+
+viral_entry %in% covid.pos.biomarkers[[1]]$gene
+viral_entry %in% covid.pos.biomarkers[[2]]$gene
+viral_entry %in% covid.pos.biomarkers[[3]]$gene
+viral_entry %in% covid.pos.biomarkers[[4]]$gene
+viral_entry %in% covid.pos.biomarkers[[5]]$gene
+viral_entry %in% covid.pos.biomarkers[[6]]$gene
+
+names(cl.obj)
+```
+

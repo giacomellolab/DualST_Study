@@ -1,0 +1,645 @@
+---
+title: "covid genes, and ORF1ab co-occurance analysis"
+author: "Yuvarani Masarapu"
+date: "2023-03-25"
+output: html_document
+---
+
+```{r}
+data.covid <- readRDS("~/Documents/covid_project/covid_lung_analysis/combined_pipeline/data_covid_lung.weirdsections.rds")
+```
+
+```{r}
+for(obj in data.covid){
+  print(unique(obj$section_id))
+}
+```
+
+We are concerned with 4 covid samples here where viral probes were added in the experiment. These are the sections where viral genes were captured and hence relevant for the ORF1ab co-occurance analysis.
+
+These are: 1112417, 1127396, 1135331, 1135332
+IDs are 2, 7, 8 and 9
+
+Th IDs in the final seurat object are 1,5,6 and 7. We add these as barcode suffixes so we can trace them back to the original object for ORF1ab co-occurance findings.
+
+```{r}
+data.covid <- data.covid[c(2,7,8,9)]
+
+sample_names <- c("covid_P1CL B1",
+                  "covid_P2CL C1", 
+                  "covid_P3CL A1", 
+                  "covid_P3CL B1")
+
+for(i in 1:length(data.covid)){
+  data.covid[[i]]$sample_name <- rep(sample_names[i], length(colnames(data.covid[[i]])))
+}
+
+new.ids <- c(1,5,6,7)
+
+for(i in 1:length(data.covid)){
+  new.barcodes <- paste(colnames(data.covid[[i]]), "_", new.ids[i], sep = "")
+  data.covid[[i]] <- RenameCells(data.covid[[i]], new.names = new.barcodes)
+}
+
+data.covid.merged = merge(data.covid[[1]], y = data.covid[2:length(data.covid)])
+
+data.covid.merged = data.covid.merged[ rowSums(data.covid.merged) >0, colSums(data.covid.merged) >0]
+```
+
+Question 1: Does ORF1ab occur as a standalone viral gene? If yes, total count and its distribution across the samples.
+Question 2: Which genes ORF1ab co-occur with? And the spot counts for those?
+Question 3: Out of all viral genes, how many does ORF1ab occur in?
+
+### ORF1ab spots-all
+```{r}
+#length(WhichCells(object = data.covid.merged, cells = colnames(data.covid.merged)[rownames(data.covid.merged) %in% "ORF1ab"]))
+
+df <- data.frame(data.covid.merged@assays$Spatial@counts)
+rownames(df)
+colnames(df) <- colnames(data.covid.merged)
+colnames(df)
+head(df)
+```
+
+```{r}
+#first find the columns where ORF1ab is detected with more than 0 UMI
+#then take those columns, take the first row out
+#take colSums() and if that's 0, then those columns have ORF1ab alone
+
+df.subset <- df[1,]
+length(which(colSums(df.subset) > 0)) # Out of 1133 spots, ORF1ab appears 455 spots
+
+spots.ORF1ab <- which(colSums(df.subset) > 0)
+```
+
+#### ORF1ab spots-all per covid sample
+```{r}
+unique(data.covid.merged$sample_name[colnames(data.covid.merged) %in% names(spots.ORF1ab)])
+
+data.covid.merged.subset <- data.covid.merged[, colnames(data.covid.merged) %in% names(spots.ORF1ab)]
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P1CL B1"]) # 439 spots with ORF1ab only from this sample
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P2CL C1"]) # 3 spots
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P3CL A1"]) # 9 spots
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P3CL B1"]) # 4 spots
+
+```
+
+### ORF1ab unique spots 
+```{r}
+df.subset2 <- df[-c(1), names(spots.ORF1ab)] #now subset the df for all the 455 spots where ORF1ab appears without the ORF1ab row
+
+length(which(colSums(df.subset2) == 0)) # Out of the 455 spots, ORF1ab appears in 221 spots as standalone gene
+
+spots.ORF1ab.only <- which(colSums(df.subset2) == 0)
+```
+
+#### per covid sample
+```{r}
+unique(data.covid.merged$sample_name[colnames(data.covid.merged) %in% names(spots.ORF1ab.only)])
+
+data.covid.merged.subset <- data.covid.merged[, colnames(data.covid.merged) %in% names(spots.ORF1ab.only)]
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P1CL B1"]) # 210 spots with ORF1ab only from this sample
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P2CL C1"]) # 2 spots
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P3CL A1"]) # 5 spots
+
+length(colnames(data.covid.merged.subset)[data.covid.merged.subset$sample_name %in% "covid_P3CL B1"]) # 4 spots
+```
+## Total umi's per covid gene
+```{r}
+rowSums(data.covid.merged)
+```
+
+## Trace back the ORF1ab spots to see where they are in the clusters
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab)]
+
+p <- VlnPlot(data.int.ORF1ab.spots, features = "nCount_Spatial", group.by = "celltype_labels_extra", cols = coldef_multi_H, pt.size = 1) + ggtitle("nCount for ORF1ab spots across celltypes")
+ggsave(p, filename = paste(indir,"/ORF1ab_co-occurance/ORF1ab_spots_nCount_celltypes.pdf", sep = ""), dpi = 300, width = 12, height = 12)
+
+p <- VlnPlot(data.int.ORF1ab.spots, features = "nCount_Spatial", group.by = "seurat_clusters", cols = coldef_ST_H, pt.size = 1) + ggtitle("nCount for ORF1ab spots across ST clusters")
+ggsave(p, filename = paste(indir,"/ORF1ab_co-occurance/ORF1ab_spots_nCount_STClusters.pdf", sep = ""), dpi = 300, width = 12, height = 12)
+```
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab.only)]
+
+p <- VlnPlot(data.int.ORF1ab.spots, features = "nCount_Spatial", group.by = "celltype_labels_extra", cols = coldef_multi_H, pt.size = 1) + ggtitle("nCount for uniquely occurring ORF1ab spots across celltypes")
+ggsave(p, filename = paste(indir,"/ORF1ab_co-occurance/ORF1ab-unique_spots_nCount_celltypes.pdf", sep = ""), dpi = 300, width = 12, height = 12)
+
+p <- VlnPlot(data.int.ORF1ab.spots, features = "nCount_Spatial", group.by = "seurat_clusters", cols = coldef_ST_H, pt.size = 1) + ggtitle("nCount for uniquely occuring ORF1ab spots across ST clusters")
+ggsave(p, filename = paste(indir,"/ORF1ab_co-occurance/ORF1ab-unique_spots_nCount_STClusters.pdf", sep = ""), dpi = 300, width = 12, height = 12)
+```
+
+```{r}
+table(data.int.ORF1ab.spots@active.ident, data.int.ORF1ab.spots$section_id)
+
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots$celltype_labels_extra)
+write.csv(tbl1, file = paste(indir, "/ORF1ab_co-occurance/ORF1ab_stats.csv", sep = ""), col.names = TRUE, row.names = TRUE)
+```
+
+## Barplot to show ORF1ab spots distribution across the celltypes
+
+#### ORF1ab unique spots
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab.only)]
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots$celltype_labels_extra)
+
+tbl1 <- data.frame(tbl1)
+```
+
+With labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="Celltype", y="Spots count", title = paste("ORF1ab unique spots across the viral-probes-covid sections", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-unique-spots_with-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="Celltype", y="Spots count", title = paste("ORF1ab unique spots across the viral-probes-covid sections", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-unique-spots_without-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+
+```
+
+#### ORF1ab all-spots
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab)]
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots$celltype_labels_extra)
+
+tbl1 <- data.frame(tbl1)
+```
+
+With labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="Celltype", y="Spots count", title = paste("ORF1ab all-spots across the viral-probes-covid sections", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-all-spots_with-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="Celltype", y="Spots count", title = paste("ORF1ab all-spots across the viral-probes-covid sections", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-all-spots_without-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+## Barplot to show ORF1ab distribution across the ST clusters
+
+#### ORF1ab unique spots
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab.only)]
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots@active.ident)
+
+tbl1 <- data.frame(tbl1)
+```
+
+With labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="ST Cluster", y="Spots count", title = paste("ORF1ab unique spots distribution across ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-unique-spots_with-labels_STClusters.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="ST Cluster", y="Spots count", title = paste("ORF1ab unique spots distribution across ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-unique-spots_without-labels_STCluster.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+
+```
+
+#### ORF1ab all-spots
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , colnames(data.int.copy) %in% names(spots.ORF1ab)]
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots@active.ident)
+
+tbl1 <- data.frame(tbl1)
+```
+
+With labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="ST cluster", y="Spots count", title = paste("ORF1ab all-spots distribution across ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-all-spots_with-labels_STcluster.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="ST cluster", y="Spots count", title = paste("ORF1ab all-spots across ST clusters", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_ORF1ab-all-spots_without-labels_STcluster.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+## Barplot for viral+ spots where ORF1ab is not present
+
+```{r}
+data.int.ORF1ab.spots <- data.int.copy[ , !colnames(data.int.copy) %in% names(spots.ORF1ab)]
+data.int.ORF1ab.spots <- data.int.ORF1ab.spots[ , data.int.ORF1ab.spots$covid_signal %in% "covid signal" ]
+```
+
+#### Celltypes
+```{r}
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots$celltype_labels_extra)
+
+tbl1 <- data.frame(tbl1)
+```
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="Celltype", y="Spots count", title = paste("Viral+ spots without ORF1ab", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_viral+_no-ORF1ab_celltypes_labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="Celltype", y="Spots count", title = paste("Viral+ spots without ORF1ab", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_viral+_no-ORF1ab_celltypes_no-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+#### ST Clusters
+
+```{r}
+tbl1 <- table(data.int.ORF1ab.spots$section_id, data.int.ORF1ab.spots@active.ident)
+
+tbl1 <- data.frame(tbl1)
+```
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = Freq), vjust=-0.5, color="black", size=6) +
+  labs(x="ST cluster", y="Spots count", title = paste("Viral+ spots without ORF1ab", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_viral+_no-ORF1ab_STCluster_labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+Without labels
+
+```{r}
+p <- ggplot(tbl1, aes(x = Var2, y = Freq, fill = Var1)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x="ST cluster", y="Spots count", title = paste("Viral+ spots without ORF1ab", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+
+ggsave(p, filename = paste(indir, "/ORF1ab_co-occurance/barplot_viral+_no-ORF1ab_STCluster_no-labels.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+## Find spots with singleton events in terms of covid gene expression
+```{r}
+#length(WhichCells(object = data.covid.merged, cells = colnames(data.covid.merged)[rownames(data.covid.merged) %in% "ORF1ab"]))
+
+#ORF1ab appears in 126 spots out of total 1133 spots of all covid signal spots in the covid sections
+#Total of 588 umi counts across 126 spots
+
+df <- data.frame(data.covid.merged@assays$Spatial@counts)
+rownames(df)
+colnames(df) <- colnames(data.covid.merged)
+colnames(df)
+head(df)
+```
+
+Find spots unique for each covid gene, those will be the singleton event spots
+```{r}
+covid.genes.spots <- list()
+covid.genes.spots.unique <- list()
+tbl1 <- data.frame()
+
+for(i in 1:length(rownames(df))){
+  df.subset <- df[i,]
+  count1 <- length(which(colSums(df.subset) > 0))
+  print(count1)
+  
+  covid.genes.spots[[i]] <- which(colSums(df.subset) > 0)
+  
+  df.subset2 <- df[-c(i), names(covid.genes.spots[[i]])]
+  count2 <- length(which(colSums(df.subset2) == 0)) 
+  print(count2)
+
+  covid.genes.spots.unique[[i]] <- which(colSums(df.subset2) == 0)
+  temp <- data.frame(rownames(df)[i], count1, count2)
+  tbl1 <- rbind(tbl1,temp )
+  
+}
+
+colnames(tbl1) <- c("covid_gene", "total_spots_found", "unique_spots")
+```
+
+#### Barplot to plot singleton event spots per covid gene
+```{r}
+p <- ggplot(tbl1, aes(x = covid_gene, y = unique_spots, fill = covid_gene)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = unique_spots), vjust=-0.5, color="black", size=6) +
+  labs(x="Covid gene", y="Spots count", title = paste("Unique spots per covid gene", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+ggsave(p, filename = paste(indir, "/covid-genes_co-ocurrance/barplot_unique_spots_per_covid-gene.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
+
+## Covid gene correlation plot
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+umis2 <- data.covid.merged@assays$Spatial@counts
+covid.exp <- log1p(colSums(umis2))
+col.means <- log1p(colMeans(umis2))
+
+sum.expr2 <- data.frame(covid.exp, col.means)
+colnames(sum.expr2) <- c("viral_expression_spot", "average_umi_spot")
+```
+
+```{r message=F, warning=F}
+library(ggplot2)
+library(ggpubr)
+p = ggplot(sum.expr2, aes(sum.expr2$viral_expression_spot, sum.expr2$average_umi_spot)) + 
+  geom_point(colour = "blue",alpha = 0.2) + 
+  stat_cor(method = "pearson", label.x = 0, label.y = 3.7,label.sep = ";") + 
+  stat_smooth(method = "lm", color="black", se = F) + 
+  theme(text = element_text(face = "bold"),
+        axis.title.x = element_text(size = 30),
+        axis.title.y = element_text(size = 30)) + 
+  theme_classic() + 
+  labs(x="Viral gene expression in a spot (log(1+p))", y="Average viral gene expression in a spot (log(1+mean))")
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/correlation_umi_viral_average_viral.pdf", sep = ""), dpi = 300)
+#ggsave(p, filename = "correlation_BCL02A1_B1.pdf", dpi = 300)
+```
+
+```{r}
+DefaultAssay(lung.integrated) <- "SCT"
+spots.covid <- lung.integrated[,colnames(lung.integrated) %in% colnames(data.covid.merged)]
+data.covid.merged <- data.covid.merged[,colnames(data.covid.merged) %in% colnames(spots.covid)]
+umis2 <- data.covid.merged@assays$Spatial@counts
+covid.exp <- log1p(colSums(umis2))
+
+umis2 <- spots.covid@assays$Spatial@counts
+col.means <- log1p(colMeans(umis2))
+
+sum.expr2 <- data.frame(covid.exp, col.means)
+colnames(sum.expr2) <- c("viral_expression_spot", "average_umi_spot")
+```
+
+
+```{r message=F, warning=F}
+library(ggplot2)
+library(ggpubr)
+p = ggplot(sum.expr2, aes(sum.expr2$viral_expression_spot, sum.expr2$average_umi_spot)) + 
+  geom_point(colour = "blue",alpha = 0.2) + 
+  stat_cor(method = "pearson", label.x = 0, label.y = 3.7,label.sep = ";") + 
+  stat_smooth(method = "lm", color="black", se = F) + 
+  theme(text = element_text(face = "bold"),
+        axis.title.x = element_text(size = 30),
+        axis.title.y = element_text(size = 30)) + 
+  theme_classic() + 
+  labs(x="Viral gene expression in a spot (log(1+p))", y="Average human gene expression in a spot (log(1+mean))")
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/correlation_umi_viral_vs_average-human-gene.pdf", sep = ""), dpi = 300)
+```
+
+## Viral genes counts combinations across the viral+ spots
+
+#### Barplot to show viral genecount detected vs the total spotcount for that combination
+```{r}
+df <- data.frame(data.covid.merged$nFeature_Spatial)
+```
+
+```{r}
+viral_spots_df <- data.frame("viral_gene_count" = c(1:9),
+                             "viral_spots_count" = c(sum(df$data.covid.merged.nFeature_Spatial == 1),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 2),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 3),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 4),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 5),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 6),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 7),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 8),
+                                                     sum(df$data.covid.merged.nFeature_Spatial == 9)))
+```
+
+
+```{r}
+viral_spots_df$viral_gene_count = factor(rownames(viral_spots_df), levels = viral_spots_df$viral_gene_count)
+
+p <- ggplot(viral_spots_df, aes(x = viral_gene_count, y = viral_spots_count, fill = viral_gene_count)) + 
+  geom_bar(position = "dodge", stat = "identity") +
+  geom_text(aes(label = viral_spots_count), vjust=-0.5, color="black", size=6) +
+  labs(x="Total no. of viral genes detected", y="Total spot count", title = paste("Number of spots detected for viral genes", sep = "")) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 25),
+        axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_text(size = 25),
+        axis.title.y = element_text(size = 25),
+        axis.text.x = element_text(size = 20, angle = -45),
+        axis.text.y = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        legend.text = element_text(size = 15))
+
+print(p)
+
+ggsave(p, filename = paste(indir, "/covid-genes_co-ocurrance/barplot_spots-count_viral-genes.pdf" ,sep = ""), dpi = 300, height = 14, width = 14)
+```
+
