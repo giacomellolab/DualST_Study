@@ -27,7 +27,7 @@ This dataset was subsampled to include donor ids: D1, D4, D5, D6, D8, D12, D18, 
 
 Two Stereoscope runs were performed, one setting was tested for each run. These are stated below.
 
-Setting 1: 5000 sc epochs and 10000 st epochs
+Setting 1: 5000 sc epochs and 10000 st epochs \
 Setting 2: 15000 sc epochs and 25000 st epochs
 
 The single cell data subsampling and preparation of the ST dataset for deconvolution was performed using scripts [prep_sc_data_deconv-CovidLung.Rmd](R_scripts/deconvolution/prep_sc_data_deconv-CovidLung.Rmd) and [prep_st_data_for_deconv-CovidLung.Rmd](R_scripts/deconvolution/prep_st_data_for_deconv-CovidLung.Rmd) respectively.
