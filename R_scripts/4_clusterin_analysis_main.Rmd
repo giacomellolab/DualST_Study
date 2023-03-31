@@ -41,6 +41,20 @@ VariableFeatures(data.object.filter.norm.integrated) <- integration.features
 data.object.filter.norm.integrated<- RunPCA(data.object.filter.norm.integrated, assay = "SCT", verbose = FALSE, features = integration.features, npcs = 50, reduction.name = "pca_before_harmony", seed.use = 58291)
 ```
 
+#### Elbow Plot to look at contributing PCs. (Chose 35 dimensions for further analysis)
+```{r fig.height=3, fig.width=3}
+ElbowPlot(object = data.object.filter.norm.integrated, ndims = 50, reduction = "pca_before_harmony")
+```
+
+#### Visualise contributing dimensions in alternate way
+```{r}
+DimHeatmap(data.object.filter.norm.integrated, dims = 1:10, nfeatures = 50, reduction = "pca_before_harmony")
+DimHeatmap(data.object.filter.norm.integrated, dims = 11:20, nfeatures = 50, reduction = "pca_before_harmony")
+DimHeatmap(data.object.filter.norm.integrated, dims = 21:30, nfeatures = 50, reduction = "pca_before_harmony")
+DimHeatmap(data.object.filter.norm.integrated, dims = 31:40, nfeatures = 50, reduction = "pca_before_harmony")
+DimHeatmap(data.object.filter.norm.integrated, dims = 40:50, nfeatures = 50, reduction = "pca_before_harmony")
+```
+
 ### Dimensionality reduction and Clustering
 
 ```{r eval=FALSE}
@@ -78,8 +92,23 @@ DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_after_har
 names(col_vector) <- (levels(data.object.filter.norm.integrated$seurat_clusters))
 
 DimPlot(object = data.object.filter.norm.integrated, group.by = "seurat_clusters", reduction = "umap_after_harmony", label = T, pt.size = 0.2, cols = col_vector[1:6]) + ggtitle("Seurat clusters distribution in UMAP")
+
+FeaturePlot(object = data.object.filter.norm.integrated, reduction = "umap_after_harmony", features = "nCount_SCT", cols = c("lightblue", "magenta", "red"), pt.size = 0.2) + ggtitle("UMIs/spot distribution in UMAP")
+
+FeaturePlot(object = data.object.filter.norm.integrated, reduction = "umap_after_harmony", features = "nFeature_SCT", cols = c("lightblue", "magenta", "red"), pt.size = 0.2) + ggtitle("Genes/spot distribution in UMAP")
+
+DimPlot(object = data.object.filter.norm.integrated, reduction = "umap_after_harmony", split.by = "sample_type", cols = col_vector[1:6]) + ggtitle("Visualise two sample types side-by-side")
 ```
 
+##### Clusters on tissue (Resolution 0.5)
+
+```{r}
+image_names <- c("slice1", "slice1.1", "slice1.2", "slice1.3", "slice1.4", "slice1.5", "slice1.6", "slice1.7", "slice1.8", "slice1.9", "slice1.10", "slice1.11", "slice1.12")
+lapply(unique(data.object.filter.norm.integrated$section_id), function(eachObj){
+  SpatialPlot(data.object.filter.norm.integrated, group.by = "seurat_clusters", cols = col_vector, images = image_names, pt.size.factor = 1.2, label = T, label.size = 10) + ggtitle("Clusters across the sections") + theme(
+  plot.title = element_text(face = "bold", size = 40, hjust = 0.5))
+})
+```
 
 ### DE analysis
 ```{r eval=FALSE}
