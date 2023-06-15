@@ -1,0 +1,137 @@
+---
+title: "9_covid_colcoalization_pvalues"
+author: "Hailey Sounart"
+date: "6/13/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read in table with the covid genes spot information.
+
+The table contains, for each covid gene pair (column 1 and 2 for covid gene 1 and 2 respectively), the number of spots unique for each covid gene (column 3 and 4) and spots common for both the covid genes (column 5).
+
+```{r read in table}
+
+indir <- getwd()
+cooccur_file <- read.csv(file = paste(indir, "/covid_gene_colocalization.csv", sep= ""), header = TRUE, sep = ",")
+
+cooccur_file
+```
+# Make columns for pairwise matrices
+```{r make columns for matrix}
+
+
+cooccur_table <- cooccur_file
+
+#present-absent
+cooccur_table$gene1_present_gene2_absent <- (cooccur_table$gene1_spots_detected - cooccur_table$present_present)
+
+#absent-present
+cooccur_table$gene1_absent_gene2_present <- (cooccur_table$gene2_spots_detected - cooccur_table$present_present)
+
+#absent-absent
+cooccur_table$absent_absent <- (1133 - (cooccur_table$present_present + cooccur_table$gene1_present_gene2_absent + cooccur_table$gene1_absent_gene2_present))
+
+cooccur_table
+```
+
+# Chi-square test per gene pair
+
+```{r chi square across table}
+
+# Create a new column for storing p-values
+cooccur_table$chi_squared_p_value <- NA
+
+# Iterate over each row of the gene_table
+for (i in 1:nrow(cooccur_table)) {
+  gene_pair <- paste(cooccur_table$gene1_name[i], cooccur_table$gene2_name[i], sep="-")  # Create a gene pair identifier
+  contingency_table <- matrix(c(cooccur_table$present_present[i], cooccur_table$gene1_absent_gene2_present[i], 
+                                cooccur_table$gene1_present_gene2_absent[i], cooccur_table$absent_absent[i]), nrow = 2)  # Create the contingency table
+  
+  # Perform the Chi-square test
+  chi_square_result <- chisq.test(contingency_table)
+  
+  # Store the p-value in the corresponding row of the p_value column
+  cooccur_table$chi_squared_p_value[i] <- chi_square_result$p.value
+  
+  # Print the result
+  cat("Chi-square test for gene pair", gene_pair, ":\n")
+  print(chi_square_result)
+  cat("\n")
+}
+
+
+```
+
+#Fisher's exact test
+
+```{r fisher text across table}
+
+# Create a new column for storing p-values
+cooccur_table$fisher_p_value <- NA
+
+# Iterate over each row of the gene_table
+for (i in 1:nrow(cooccur_table)) {
+  gene_pair <- paste(cooccur_table$gene1_name[i], cooccur_table$gene2_name[i], sep="-")  # Create a gene pair identifier
+  contingency_table <- matrix(c(cooccur_table$present_present[i], cooccur_table$gene1_absent_gene2_present[i], 
+                                cooccur_table$gene1_present_gene2_absent[i], cooccur_table$absent_absent[i]), nrow = 2)  # Create the contingency table
+  
+  # Perform the Fisher's exact test
+  fisher_result <- fisher.test(contingency_table)
+  
+  # Store the p-value in the corresponding row of the p_value column
+  cooccur_table$fisher_p_value[i] <- fisher_result$p.value
+  
+  #add gene-pair
+  cooccur_table$gene_pair[i] <- gene_pair
+  
+  # Print the result
+  cat("Fisher's exact test for gene pair", gene_pair, ":\n")
+  print(fisher_result)
+  cat("\n")
+}
+
+
+```
+
+```{r view table}
+
+cooccur_table
+```
+
+
+# Plot results
+
+```{r format table}
+
+gene_table <- cooccur_table[,c("gene_pair","chi_squared_p_value","fisher_p_value")]
+gene_table
+
+```
+
+
+```{r plot table}
+
+library(ggplot2)
+
+# plot p-values
+
+# Reshape the data from wide to long format
+gene_table_long <- tidyr::pivot_longer(gene_table, cols = c("chi_squared_p_value", "fisher_p_value"), names_to = "Test", values_to = "p_value")
+
+# Create separate bar graphs for Chi-square and Fisher's exact test p-values
+p_vert <- ggplot(gene_table_long, aes(x = p_value, y = gene_pair, fill = Test)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.5), width = 0.5) +
+  theme_minimal() +
+  geom_vline(xintercept = 0.05, linetype = "dotted", color = "black")
+
+# Plot the two bar graphs side by side
+gridExtra::grid.arrange(p_vert + labs(title = "Chi-square p-values"), p_vert + labs(title = "Fisher's exact test p-values"), ncol = 2)
+
+# Save the plots as a PDF file
+ggsave( paste(indir, "/covid_genes_coloca_pvalues_plots_vert.pdf", sep= ""), plot = p_vert, width = 8, height = 5, units = "in", dpi = 300)
+
+```

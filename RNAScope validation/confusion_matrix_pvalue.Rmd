@@ -1,0 +1,45 @@
+---
+title: "8_confusion_matrix_pvalue"
+author: "Hailey Sounart"
+date: "6/5/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Make confusion matrix
+
+```{r make confusion matrix}
+
+# Confusion matrix values
+RNA_true_ST_true <- 46  # RNAScope positive and ST positive
+RNA_false_ST_true <- 43  # RNAScope negative and ST positive
+RNA_true_ST_false <- 113  # RNAScope positive and ST negative
+RNA_false_ST_false <- 139 # RNAScope negative and ST negative
+
+# Create confusion matrix
+confusion_matrix <- matrix(c(RNA_true_ST_true, RNA_true_ST_false, RNA_false_ST_true, RNA_false_ST_false), nrow = 2, byrow = TRUE)
+colnames(confusion_matrix) <- c("RNAScope Positive", "RNAScope Negative")
+rownames(confusion_matrix) <- c("ST Positive", "ST Negative")
+confusion_matrix
+
+```
+
+# Chi-squared test
+
+```{r run chi test}
+
+# Perform chi-square test
+chi_square_result <- chisq.test(confusion_matrix)
+
+# Extract chi-square statistic and p-value
+chi_square_statistic <- chi_square_result$statistic
+chi_square_pvalue <- chi_square_result$p.value
+
+# Print results
+print(chi_square_statistic)
+print(chi_square_pvalue)
+
+```

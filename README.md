@@ -33,6 +33,14 @@ The results of the deconvolution were summarised in the script [summary_stereosc
 ### Deconvolution-based colocalization analysis
 More extensive analysis based on deconvolution to identify cluster-specific and cell-type-specific DE genes between the SARS-CoV-2+ and SARS-CoV2- spots was performed using the script [colocalisation_DE_deconvolution-based.Rmd](R_scripts/deconvolution-based_colocalization/colocalisation_DE_deconvolution-based.Rmd).
 
-### Covid genes co-occurance analysis
-Analysis of the SARS-CoV-2+ spots to identify covid genes co-occurance with each other and their distribution can be re-run using the file [covid-genes_co-occurance.Rmd](R_scripts/deconvolution-based_colocalization/covid-genes_co-occurance.Rmd)
+### Covid genes colocalization analysis
+Analysis of the SARS-CoV-2+ spots to identify covid genes co-occurance with each other and their distribution can be re-run using the file [covid-genes_co-occurance.Rmd](R_scripts/covid-genes_colocalization/covid-genes_co-occurance.Rmd)
 
+The Fisher's test and the Chi-square tests for the covid genes localization were performed using the script [covid_colcoalization_pvalues.Rmd](R_scipts/covid-genes_colocalization/covid_colcoalization_pvalues.Rmd) and the file [covid_gene_colocalization.csv](R_scripts/covid-genes_colocalization/covid_gene_colocalization.csv).
+
+## Code for RNAScope validation
+All the required scripts for running elastic registration, RNAscope and ST calls, validation analysis and running chi-square test on the confusion matrix are available in the folder RNAScope validation. 
+
+There is a ReadMe.txt file in the same folder that describes what each script does in more details that are required for reproducibility.
+
+The chi-square test on the confusion matrix was performed using the script [confusion_matrix_pvalue.Rmd](RNAScope validation/confusion_matrix_pvalue.Rmd).
