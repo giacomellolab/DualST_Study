@@ -1,7 +1,7 @@
 ---
-title: "9_covid_colcoalization_pvalues"
+title: "covid_gene_colocalization_permutation"
 author: "Hailey Sounart"
-date: "6/13/2023"
+date: "8/30/2023"
 output: html_document
 ---
 
@@ -9,9 +9,16 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Read in table with the covid genes spot information.
+# Load libraries
 
-The table contains, for each covid gene pair (column 1 and 2 for covid gene 1 and 2 respectively), the number of spots unique for each covid gene (column 3 and 4) and spots common for both the covid genes (column 5).
+```{r}
+
+library(coin)
+library(ggplot2)
+
+```
+
+# Read in table
 
 ```{r read in table}
 
@@ -20,6 +27,7 @@ cooccur_file <- read.csv(file = paste(indir, "/covid_gene_colocalization.csv", s
 
 cooccur_file
 ```
+
 # Make columns for pairwise matrices
 ```{r make columns for matrix}
 
@@ -85,9 +93,6 @@ for (i in 1:nrow(cooccur_table)) {
   # Store the p-value in the corresponding row of the p_value column
   cooccur_table$fisher_p_value[i] <- fisher_result$p.value
   
-  #add gene-pair
-  cooccur_table$gene_pair[i] <- gene_pair
-  
   # Print the result
   cat("Fisher's exact test for gene pair", gene_pair, ":\n")
   print(fisher_result)
@@ -97,39 +102,87 @@ for (i in 1:nrow(cooccur_table)) {
 
 ```
 
+# Permutation test
+
+```{r}
+
+set.seed(20)
+
+# Create a new column for storing p-values
+cooccur_table$perm_p_value <- NA
+
+# Iterate over each row of the gene_table
+for (i in 1:nrow(cooccur_table)) {
+  gene_pair <- paste(cooccur_table$gene1_name[i], cooccur_table$gene2_name[i], sep="-")  # Create a gene pair identifier
+  contingency_table <- matrix(c(cooccur_table$present_present[i], cooccur_table$gene1_absent_gene2_present[i], 
+                                cooccur_table$gene1_present_gene2_absent[i], cooccur_table$absent_absent[i]), nrow = 2)  # Create the contingency table
+  
+  contingency_table <- as.table(contingency_table)
+  
+  # Perform the Approximative (Monte Carlo) Pearson chi-squared test
+  perm_test <- independence_test(contingency_table, distribution = approximate(nresample = 10000)) 
+  
+  # Store the p-value in the corresponding row of the p_value column
+  cooccur_table$perm_p_value[i] <- pvalue(perm_test)
+  
+  #add gene-pair
+  cooccur_table$gene_pair[i] <- gene_pair
+  
+  # Print the result
+  cat("Independence test for gene pair", gene_pair, ":\n")
+  print(perm_test)
+  cat("\n")
+}
+
+```
+
 ```{r view table}
 
 cooccur_table
 ```
 
-
 # Plot results
 
 ```{r format table}
 
-gene_table <- cooccur_table[,c("gene_pair","chi_squared_p_value","fisher_p_value")]
+gene_table <- cooccur_table[,c("gene_pair","chi_squared_p_value","fisher_p_value", "perm_p_value")]
 gene_table
 
 ```
 
-
 ```{r plot table}
-
-library(ggplot2)
 
 # plot p-values
 
 # Reshape the data from wide to long format
-gene_table_long <- tidyr::pivot_longer(gene_table, cols = c("chi_squared_p_value", "fisher_p_value"), names_to = "Test", values_to = "p_value")
+gene_table_long <- tidyr::pivot_longer(gene_table, cols = c("chi_squared_p_value", "fisher_p_value", "perm_p_value"), names_to = "Test", values_to = "p_value")
+
+# Define HEX color codes for each test
+test_colors <- c(
+  "chi_squared_p_value" = "#fbb040",  # Red
+  "fisher_p_value" = "#f15a29",       # Blue
+  "perm_p_value" = "#be1e2d"          # Green
+)
 
 # Create separate bar graphs for Chi-square and Fisher's exact test p-values
 p_vert <- ggplot(gene_table_long, aes(x = p_value, y = gene_pair, fill = Test)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.5), width = 0.5) +
   theme_minimal() +
-  geom_vline(xintercept = 0.05, linetype = "dotted", color = "black")
+  geom_vline(xintercept = 0.05, linetype = "dotted", color = "black") +
+  scale_fill_manual(values = test_colors) +  # Specify fill colors+
+  theme(
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.line.x = element_line(color = "black"),  # Make x axis line black
+    axis.line.y = element_line(color = "black"),  # Make y axis line black
+    axis.ticks = element_line(color = "black"),   # Make tick marks black
+    axis.ticks.length = unit(0.25, "cm"),  # Adjust the length of the tick marks if needed
+    axis.text.x = element_text(color = "black"),  # Make x axis text black
+    axis.text.y = element_text(color = "black")   # Make y axis text black
+  )
 
 # Plot the two bar graphs side by side
-gridExtra::grid.arrange(p_vert + labs(title = "Chi-square p-values"), p_vert + labs(title = "Fisher's exact test p-values"), ncol = 2)
+gridExtra::grid.arrange(p_vert + labs(title = "Chi-square p-values"), p_vert + labs(title = "Fisher's exact test p-values"), p_vert + labs(title = "Approximative (Monte Carlo) Pearson chi-squared test p-values"), ncol = 3)
 
 # Save the plots as a PDF file
 ggsave( paste(indir, "/covid_genes_coloca_pvalues_plots_vert.pdf", sep= ""), plot = p_vert, width = 8, height = 5, units = "in", dpi = 300)
